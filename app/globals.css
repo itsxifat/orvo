@@ -1,0 +1,311 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Orvo design system
+   Yellow, red and black on a warm off-white ground. Soft rounded surfaces that
+   float on the page, generous whitespace, one family carrying the hierarchy
+   through weight rather than a second condensed face.
+   ───────────────────────────────────────────────────────────────────────────*/
+
+:root {
+  --header-h: 92px;
+  --background: #F8F7F4;
+  --foreground: #0F0F11;
+  --beam: #FFC93C;
+  --signal: #DC2626;
+  --muted: #6E6C68;
+  --surface: #FFFFFF;
+  --hairline: #E6E3DC;
+}
+
+html[data-ticker="off"] {
+  --header-h: 64px;
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --header-h: 100px;
+  }
+  html[data-ticker="off"] {
+    --header-h: 72px;
+  }
+}
+
+@layer base {
+  body {
+    background-color: #F8F7F4;
+    color: #0F0F11;
+    font-family: var(--font-saira), system-ui, "Segoe UI", Arial, sans-serif;
+    font-weight: 400;
+    letter-spacing: -0.006em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  body::-webkit-scrollbar {
+    display: none;
+  }
+
+  * {
+    box-sizing: border-box;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  *::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Headlines lean on weight and tight tracking, not on caps. */
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 700;
+    line-height: 1.06;
+    letter-spacing: -0.03em;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  ::selection {
+    background: #FFC93C;
+    color: #0F0F11;
+  }
+
+  :focus-visible {
+    outline: 2px solid #0F0F11;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer components {
+  .container-custom {
+    @apply w-full max-w-frame mx-auto px-5 sm:px-8 lg:px-10;
+  }
+
+  /* ── Buttons — pills, always ───────────────────────────────────────────── */
+  .btn-base {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-7 py-3.5
+           text-[14px] font-semibold tracking-[-0.01em]
+           transition-all duration-200 active:scale-[0.98];
+  }
+
+  .btn-primary {
+    @apply btn-base bg-ink text-paper-pure hover:bg-ink-soft shadow-soft
+           hover:shadow-lift;
+  }
+
+  /* The signature call to action: yellow with black type. */
+  .btn-beam {
+    @apply btn-base bg-beam text-ink hover:bg-beam-dark shadow-beam;
+  }
+
+  .btn-outline {
+    @apply btn-base bg-transparent text-ink border border-haze-dark
+           hover:border-ink hover:bg-ink hover:text-paper-pure;
+  }
+
+  .btn-ghost {
+    @apply btn-base bg-transparent text-ink px-4 hover:bg-haze;
+  }
+
+  /* Inverted for dark bands. */
+  .btn-invert {
+    @apply btn-base bg-paper-pure text-ink hover:bg-beam;
+  }
+
+  .btn-invert-outline {
+    @apply btn-base bg-transparent text-paper-pure border border-white/20
+           hover:border-white/50 hover:bg-white/10;
+  }
+
+  /* ── Type scale ────────────────────────────────────────────────────────── */
+  .section-title {
+    @apply text-[2.1rem] md:text-[2.9rem] font-bold leading-[1.02]
+           tracking-[-0.035em] text-ink;
+  }
+
+  .section-subtitle {
+    @apply text-[13px] font-medium tracking-[-0.005em] text-smoke;
+  }
+
+  /* Small pill label used above a section title. */
+  .eyebrow {
+    @apply inline-flex items-center gap-2 rounded-full bg-haze px-3 py-1.5
+           text-[12px] font-semibold text-smoke-dark tracking-[-0.005em];
+  }
+
+  .eyebrow-beam {
+    @apply inline-flex items-center gap-2 rounded-full bg-beam-soft px-3 py-1.5
+           text-[12px] font-semibold text-ink tracking-[-0.005em];
+  }
+
+  .index-mark {
+    @apply text-[13px] font-semibold tabular-nums text-smoke tracking-[-0.005em];
+  }
+
+  /* ── Surfaces ──────────────────────────────────────────────────────────── */
+  .card {
+    @apply rounded-3xl bg-paper-pure shadow-soft;
+  }
+
+  .card-quiet {
+    @apply rounded-3xl bg-paper-pure border border-haze-dark;
+  }
+
+  .card-dark {
+    @apply rounded-3xl bg-ink text-paper-pure;
+  }
+
+  /* ── Forms ─────────────────────────────────────────────────────────────── */
+  .input-base {
+    @apply w-full rounded-2xl border border-haze-dark bg-paper-pure px-5 py-3.5
+           text-[15px] text-ink placeholder-smoke-light
+           transition-colors duration-200
+           focus:outline-none focus:border-ink focus:ring-2 focus:ring-ink/10;
+  }
+
+  .input-dark {
+    @apply w-full rounded-2xl border border-white/15 bg-white/[0.06] px-5 py-3.5
+           text-[15px] text-paper-pure placeholder-white/30
+           transition-colors duration-200
+           focus:outline-none focus:border-beam focus:ring-2 focus:ring-beam/20;
+  }
+
+  /* ── Badges ────────────────────────────────────────────────────────────── */
+  .badge-base {
+    @apply inline-flex items-center rounded-full px-3 py-1
+           text-[11.5px] font-semibold tracking-[-0.005em];
+  }
+
+  .badge-sale {
+    @apply badge-base bg-signal text-white;
+  }
+
+  .badge-new {
+    @apply badge-base bg-beam text-ink;
+  }
+
+  .badge-out {
+    @apply badge-base bg-ink/85 text-paper-pure backdrop-blur-sm;
+  }
+
+  /* Chip used for sizes, filters and tags. */
+  .chip {
+    @apply inline-flex items-center justify-center rounded-full border
+           border-haze-dark bg-paper-pure px-4 py-2 text-[13px] font-medium
+           text-ink transition-all duration-200
+           hover:border-ink hover:-translate-y-px;
+  }
+
+  .chip-active {
+    @apply border-ink bg-ink text-paper-pure hover:bg-ink;
+  }
+
+  .chip-off {
+    @apply border-haze-dark bg-haze text-smoke-light cursor-not-allowed
+           hover:border-haze-dark hover:translate-y-0;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Highlighter stroke behind a word — the yellow doing brand work. */
+  .beam-underline {
+    background-image: linear-gradient(transparent 62%, rgba(255, 201, 60, 0.85) 62%);
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+  }
+
+  .link-draw {
+    background-image: linear-gradient(currentColor, currentColor);
+    background-size: 0 1.5px;
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+    transition: background-size 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    padding-bottom: 2px;
+  }
+
+  .link-draw:hover {
+    background-size: 100% 1.5px;
+  }
+
+  /* Left inset matching .container-custom, for full-bleed sections whose copy
+     still has to line up with the page grid. */
+  .pl-frame {
+    padding-left: 1.25rem;
+  }
+
+  @media (min-width: 640px) {
+    .pl-frame {
+      padding-left: 2rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .pl-frame {
+      padding-left: max(2.5rem, calc((100vw - 1400px) / 2 + 2.5rem));
+    }
+  }
+
+  .marquee-track {
+    display: flex;
+    width: max-content;
+    will-change: transform;
+  }
+
+  .pause-on-hover:hover .marquee-track {
+    animation-play-state: paused;
+  }
+
+  /* Clip a rounded image so the corners survive a transform on hover. */
+  .clip-round {
+    -webkit-mask-image: -webkit-radial-gradient(white, black);
+    transform: translateZ(0);
+  }
+}
+
+/* Swiper — soft pills */
+.swiper-pagination-bullet {
+  background-color: #0F0F11 !important;
+  opacity: 0.18;
+  border-radius: 999px !important;
+  width: 8px !important;
+  height: 8px !important;
+  transition: opacity 0.2s, width 0.25s, background-color 0.2s;
+}
+
+.swiper-pagination-bullet-active {
+  background-color: #FFC93C !important;
+  opacity: 1;
+  width: 26px !important;
+}
+
+.swiper-button-prev,
+.swiper-button-next {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track {
+    animation: none !important;
+  }
+}

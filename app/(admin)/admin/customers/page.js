@@ -1,0 +1,769 @@
+"use client";
+
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useSession } from "next-auth/react";
+import toast from "react-hot-toast";
+import {
+  Search, Plus, X, Users, UserCheck, Shield, ShoppingBag,
+  Trash2, Pencil, ChevronLeft, ChevronRight, Eye,
+  Mail, Phone, MapPin, Calendar, CheckCircle, XCircle,
+} from "lucide-react";
+import { PageHeader, Button } from "@/components/admin/ui";
+import {
+  ROLES, ROLE_LABELS, ROLE_PERMISSIONS, assignableRoles,
+  getEffectivePermissions, isElevated, PERMISSION_GROUPS, PERMISSIONS,
+} from "@/lib/permissions";
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+const ROLE_BADGE_CLS = {
+  superadmin: "bg-ink/10 text-ink",
+  admin: "bg-signal/10 text-signal",
+  moderator: "bg-blue-100 text-blue-700",
+  staff: "bg-amber-100 text-amber-700",
+  customer: "bg-smoke/15 text-smoke",
+};
+function RoleBadge({ role }) {
+  return (
+    <span className={`text-[10px] uppercase tracking-[-0.005em] px-2 py-0.5 font-medium ${ROLE_BADGE_CLS[role] || ROLE_BADGE_CLS.customer}`}>
+      {ROLE_LABELS[role] || role}
+    </span>
+  );
+}
+
+function Avatar({ user, size = "sm" }) {
+  const cls = size === "sm"
+    ? "w-8 h-8 text-[11px]"
+    : "w-14 h-14 text-xl";
+  if (user?.image) {
+    return (
+      <img
+        src={user.image}
+        alt={user.name}
+        className={`${cls} rounded-full object-cover flex-shrink-0`}
+      />
+    );
+  }
+  return (
+    <div className={`${cls} rounded-full bg-signal flex items-center justify-center text-white font-bold flex-shrink-0`}>
+      {user?.name?.charAt(0)?.toUpperCase() || "U"}
+    </div>
+  );
+}
+
+function StatCard({ label, value, icon: Icon, accent }) {
+  const accents = {
+    brown: "bg-ink/8 text-ink",
+    tan: "bg-smoke/15 text-smoke",
+    terracotta: "bg-signal/10 text-signal",
+    green: "bg-emerald-500/10 text-emerald-600",
+  };
+  return (
+    <div className="bg-white border border-smoke/15 rounded-2xl shadow-[0_1px_3px_rgba(16,17,20,0.04)] p-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[10px] uppercase tracking-[-0.005em] text-smoke mb-1.5">{label}</p>
+          <p className="text-2xl font-bold text-ink">{value ?? "—"}</p>
+        </div>
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${accents[accent] || accents.tan}`}>
+          <Icon size={18} strokeWidth={1.5} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Order status colors ────────────────────────────────────────────────────────
+const orderStatusCls = {
+  delivered:  "bg-emerald-100 text-emerald-700",
+  shipped:    "bg-blue-100 text-blue-700",
+  processing: "bg-amber-100 text-amber-700",
+  pending:    "bg-yellow-100 text-yellow-700",
+  cancelled:  "bg-red-100 text-red-600",
+};
+
+// ── User detail drawer ─────────────────────────────────────────────────────────
+function UserDetailDrawer({ userId, onClose, onEdit, onDelete }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/admin/users/${userId}`)
+      .then((r) => r.json())
+      .then(setData)
+      .catch(() => toast.error("Failed to load"))
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  const user = data?.user;
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
+      <div className="fixed right-0 top-0 bottom-0 w-full max-w-[420px] bg-white z-50 flex flex-col shadow-2xl animate-slide-in-right">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-smoke/20 flex-shrink-0">
+          <p className="text-[11px] uppercase tracking-[-0.005em] text-smoke font-medium">User Details</p>
+          <button onClick={onClose} className="text-smoke hover:text-ink transition-colors">
+            <X size={16} strokeWidth={1.5} />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center text-smoke text-sm">Loading…</div>
+        ) : !user ? (
+          <div className="flex-1 flex items-center justify-center text-smoke text-sm">Failed to load</div>
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            {/* Profile header */}
+            <div className="px-6 py-5 border-b border-smoke/10">
+              <div className="flex items-start gap-4">
+                <Avatar user={user} size="lg" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-base font-bold text-ink truncate">{user.name}</p>
+                  <p className="text-sm text-smoke truncate">{user.email}</p>
+                  <div className="flex items-center flex-wrap gap-2 mt-2">
+                    <RoleBadge role={user.role} />
+                    {user.emailVerified ? (
+                      <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium">
+                        <CheckCircle size={11} /> Verified
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-[10px] text-smoke/50">
+                        <XCircle size={11} /> Unverified
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick stats */}
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                <div className="bg-paper/60 p-3 text-center">
+                  <p className="text-lg font-bold text-ink">{user.orderCount}</p>
+                  <p className="text-[10px] text-smoke uppercase tracking-[-0.005em]">Orders</p>
+                </div>
+                <div className="bg-paper/60 p-3 text-center">
+                  <p className="text-lg font-bold text-ink">Tk {user.totalSpent?.toLocaleString()}</p>
+                  <p className="text-[10px] text-smoke uppercase tracking-[-0.005em]">Total Spent</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Info rows */}
+            <div className="px-6 py-4 space-y-3 border-b border-smoke/10">
+              <div className="flex items-center gap-3 text-sm">
+                <Mail size={14} className="text-smoke flex-shrink-0" strokeWidth={1.5} />
+                <span className="text-ink break-all">{user.email}</span>
+              </div>
+              {user.phone && (
+                <div className="flex items-center gap-3 text-sm">
+                  <Phone size={14} className="text-smoke flex-shrink-0" strokeWidth={1.5} />
+                  <span className="text-ink">{user.phone}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-3 text-sm">
+                <Calendar size={14} className="text-smoke flex-shrink-0" strokeWidth={1.5} />
+                <span className="text-ink">
+                  Joined {new Date(user.createdAt).toLocaleDateString("en-BD", {
+                    year: "numeric", month: "long", day: "numeric",
+                  })}
+                </span>
+              </div>
+              {user.address?.city && (
+                <div className="flex items-center gap-3 text-sm">
+                  <MapPin size={14} className="text-smoke flex-shrink-0" strokeWidth={1.5} />
+                  <span className="text-ink">
+                    {[user.address.street, user.address.city, user.address.state]
+                      .filter(Boolean).join(", ")}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Recent orders */}
+            {data.orders?.length > 0 && (
+              <div className="px-6 py-4">
+                <p className="text-[10px] uppercase tracking-[-0.005em] text-smoke font-medium mb-3">
+                  Recent Orders
+                </p>
+                <div className="space-y-0">
+                  {data.orders.slice(0, 6).map((order) => (
+                    <div
+                      key={order._id}
+                      className="flex items-center justify-between py-2.5 border-b border-smoke/10 last:border-0"
+                    >
+                      <div>
+                        <p className="text-[12px] font-semibold text-ink">{order.orderNumber}</p>
+                        <p className="text-[10px] text-smoke mt-0.5">
+                          {order.itemCount} item{order.itemCount !== 1 ? "s" : ""} ·{" "}
+                          {new Date(order.createdAt).toLocaleDateString("en-BD")}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[12px] font-semibold text-ink">
+                          Tk {order.totalAmount.toLocaleString()}
+                        </p>
+                        <span className={`text-[9px] uppercase tracking-[-0.005em] px-1.5 py-0.5 inline-block mt-0.5 ${
+                          orderStatusCls[order.orderStatus] || "bg-smoke/15 text-smoke"
+                        }`}>
+                          {order.orderStatus}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Footer actions */}
+        {user && (
+          <div className="flex gap-3 px-6 py-4 border-t border-smoke/20 flex-shrink-0">
+            <Button onClick={() => onEdit(user)} className="flex-1">
+              <Pencil size={13} /> Edit User
+            </Button>
+            <button
+              onClick={() => onDelete(user)}
+              className="flex items-center gap-2 px-4 py-2.5 text-[11px] uppercase tracking-[-0.005em] border border-red-200 text-red-500 hover:bg-red-50 transition-colors"
+            >
+              <Trash2 size={13} strokeWidth={1.5} />
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ── Create / Edit modal ────────────────────────────────────────────────────────
+function UserFormModal({ mode, user, onClose, onSaved, actorRole, grantablePerms }) {
+  const [form, setForm] = useState(
+    mode === "edit"
+      ? {
+          name: user.name || "",
+          phone: user.phone || "",
+          role: user.role || "customer",
+          permissions: user.permissions || [],
+          emailVerified: user.emailVerified || false,
+        }
+      : { name: "", email: "", password: "", role: "customer", phone: "", permissions: [] }
+  );
+  const [saving, setSaving] = useState(false);
+
+  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+  const togglePerm = (key) =>
+    set("permissions", form.permissions.includes(key)
+      ? form.permissions.filter((k) => k !== key)
+      : [...form.permissions, key]);
+
+  // Roles the actor may assign, plus the account's current role so the select
+  // never silently misrepresents an existing higher-tier user.
+  const roleOptions = Array.from(new Set([form.role, ...assignableRoles(actorRole)]));
+
+  const submit = async () => {
+    if (!form.name.trim()) { toast.error("Name is required"); return; }
+    if (mode === "create") {
+      if (!form.email.trim()) { toast.error("Email is required"); return; }
+      if (!form.password || form.password.length < 6) { toast.error("Password must be at least 6 characters"); return; }
+    }
+
+    setSaving(true);
+    try {
+      const url = mode === "edit" ? `/api/admin/users/${user._id}` : "/api/admin/users";
+      const method = mode === "edit" ? "PUT" : "POST";
+      // Elevated roles implicitly hold everything — no override list needed.
+      const payload = { ...form };
+      if (form.role === "customer" || isElevated(form.role)) payload.permissions = [];
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok) { toast.error(json.error || "Failed"); return; }
+      toast.success(mode === "edit" ? "User updated" : "User created");
+      onSaved(json);
+    } catch {
+      toast.error("Something went wrong");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls = "w-full rounded-2xl border border-smoke/30 bg-transparent px-3 py-2 text-sm text-ink focus:outline-none focus:border-ink transition-colors";
+  const labelCls = "block text-[10px] uppercase tracking-[-0.005em] text-smoke mb-1.5";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white w-full max-w-md p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-6">
+          <p className="text-[11px] uppercase tracking-[-0.005em] text-smoke font-medium">
+            {mode === "edit" ? "Edit User" : "Create User"}
+          </p>
+          <button onClick={onClose} className="text-smoke hover:text-ink transition-colors">
+            <X size={16} strokeWidth={1.5} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className={labelCls}>Full Name *</label>
+            <input
+              className={inputCls}
+              value={form.name}
+              onChange={(e) => set("name", e.target.value)}
+              placeholder="e.g. Rahim Uddin"
+            />
+          </div>
+
+          {mode === "create" && (
+            <>
+              <div>
+                <label className={labelCls}>Email *</label>
+                <input
+                  className={inputCls}
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => set("email", e.target.value)}
+                  placeholder="user@example.com"
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Password *</label>
+                <input
+                  className={inputCls}
+                  type="password"
+                  value={form.password}
+                  onChange={(e) => set("password", e.target.value)}
+                  placeholder="Min 6 characters"
+                />
+              </div>
+            </>
+          )}
+
+          <div>
+            <label className={labelCls}>Phone</label>
+            <input
+              className={inputCls}
+              value={form.phone}
+              onChange={(e) => set("phone", e.target.value)}
+              placeholder="+880 1XXX XXXXXX"
+            />
+          </div>
+
+          <div>
+            <label className={labelCls}>Role</label>
+            <select
+              className={inputCls + " bg-white"}
+              value={form.role}
+              onChange={(e) => set("role", e.target.value)}
+            >
+              {roleOptions.map((r) => (
+                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Permission editor — only for staff roles below the elevated tier. */}
+          {form.role !== "customer" && (
+            isElevated(form.role) ? (
+              <div className="rounded-2xl bg-paper/60 px-3 py-2.5 text-[11px] text-smoke">
+                Full access — this role holds every permission.
+              </div>
+            ) : (
+              <div>
+                <label className={labelCls}>Permissions</label>
+                <p className="text-[10px] text-smoke mb-2 normal-case tracking-normal">
+                  Role defaults are locked on. Tick extra permissions to grant.
+                </p>
+                <div className="space-y-3 max-h-52 overflow-y-auto pr-1 border border-smoke/15 rounded-2xl p-3">
+                  {PERMISSION_GROUPS.map((g) => (
+                    <div key={g.label}>
+                      <p className="text-[9px] uppercase tracking-[-0.005em] text-smoke/70 mb-1">{g.label}</p>
+                      <div className="space-y-1">
+                        {g.keys.map((key) => {
+                          const isDefault = (ROLE_PERMISSIONS[form.role] || []).includes(key);
+                          const grantable = grantablePerms.includes(key);
+                          const checked = isDefault || form.permissions.includes(key);
+                          const disabled = isDefault || !grantable;
+                          return (
+                            <label
+                              key={key}
+                              className={`flex items-center gap-2 text-[12px] ${disabled && !isDefault ? "opacity-40" : "cursor-pointer"}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={disabled}
+                                onChange={() => togglePerm(key)}
+                                className="accent-signal"
+                              />
+                              <span className="text-ink">{PERMISSIONS[key]}</span>
+                              {isDefault && <span className="text-[9px] text-smoke">(role)</span>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          )}
+
+          {mode === "edit" && (
+            <div className="flex items-center justify-between py-3 border-t border-smoke/10">
+              <div>
+                <p className="text-[12px] font-medium text-ink">Email Verified</p>
+                <p className="text-[10px] text-smoke">Allow login without OTP</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.emailVerified}
+                  onChange={(e) => set("emailVerified", e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-smoke/40 rounded-full peer peer-checked:bg-signal transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:w-5 after:h-5 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-5" />
+              </label>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <Button onClick={submit} disabled={saving} className="flex-1">
+              {saving ? "Saving…" : mode === "edit" ? "Save Changes" : "Create User"}
+            </Button>
+            <Button variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────────
+export default function AdminUsersPage() {
+  const { data: session } = useSession();
+  const actorRole = session?.user?.role || ROLES.CUSTOMER;
+  const grantablePerms = getEffectivePermissions(session?.user);
+
+  const [users, setUsers] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [total, setTotal] = useState(0);
+  const [pages, setPages] = useState(1);
+  const [loading, setLoading] = useState(true);
+
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+
+  const [detailId, setDetailId] = useState(null);
+  const [editUser, setEditUser] = useState(null);
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const searchTimer = useRef(null);
+
+  const load = useCallback(async (p = page, q = search, r = roleFilter) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: p, limit: 20 });
+      if (q) params.set("q", q);
+      if (r) params.set("role", r);
+      const res = await fetch(`/api/admin/users?${params}`);
+      const data = await res.json();
+      setUsers(data.users || []);
+      setTotal(data.total || 0);
+      setPages(data.pages || 1);
+      if (data.stats) setStats(data.stats);
+    } catch {
+      toast.error("Failed to load users");
+    } finally {
+      setLoading(false);
+    }
+  }, [page, search, roleFilter]);
+
+  useEffect(() => { load(); }, [page]);
+
+  const handleSearchChange = (val) => {
+    setSearch(val);
+    setPage(1);
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => load(1, val, roleFilter), 400);
+  };
+
+  const handleRoleChange = (val) => {
+    setRoleFilter(val);
+    setPage(1);
+    load(1, search, val);
+  };
+
+  const handleDelete = async (user) => {
+    if (!confirm(`Delete "${user.name}"? This cannot be undone.`)) return;
+    const res = await fetch(`/api/admin/users/${user._id}`, { method: "DELETE" });
+    const data = await res.json();
+    if (!res.ok) { toast.error(data.error || "Failed to delete"); return; }
+    toast.success("User deleted");
+    if (detailId === user._id) setDetailId(null);
+    load();
+  };
+
+  const handleSaved = (savedUser) => {
+    setEditUser(null);
+    setCreateOpen(false);
+    load();
+    // If we were viewing the edited user, refresh their detail
+    if (detailId === savedUser._id) {
+      setDetailId(null);
+      setTimeout(() => setDetailId(savedUser._id), 50);
+    }
+  };
+
+  return (
+    <div>
+      <PageHeader
+        icon={Users}
+        title="User Management"
+        subtitle={`${total} ${total === 1 ? "user" : "users"} total`}
+        actions={
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus size={14} /> Add User
+          </Button>
+        }
+      />
+
+      {/* Stats */}
+      {stats && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <StatCard label="Total Users"  value={stats.total}     icon={Users}      accent="brown" />
+          <StatCard label="Customers"    value={stats.customers} icon={ShoppingBag} accent="tan" />
+          <StatCard label="Staff"        value={stats.staff}     icon={Shield}     accent="terracotta" />
+          <StatCard label="Verified"     value={stats.verified}  icon={UserCheck}  accent="green" />
+        </div>
+      )}
+
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-smoke/60" strokeWidth={1.5} />
+          <input
+            value={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Search by name, email, or phone…"
+            className="w-full pl-9 pr-9 py-2.5 rounded-2xl border border-smoke/30 text-sm text-ink bg-white focus:outline-none focus:border-ink transition-colors"
+          />
+          {search && (
+            <button
+              onClick={() => handleSearchChange("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-smoke/60 hover:text-ink transition-colors"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+        <select
+          value={roleFilter}
+          onChange={(e) => handleRoleChange(e.target.value)}
+          className="rounded-2xl border border-smoke/30 px-3 py-2.5 text-sm text-ink bg-white focus:outline-none focus:border-ink transition-colors"
+        >
+          <option value="">All Roles</option>
+          <option value="customer">Customers</option>
+          <option value="staff">Staff</option>
+          <option value="moderator">Moderators</option>
+          <option value="admin">Admins</option>
+          <option value="superadmin">Super Admins</option>
+        </select>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white border border-smoke/15 rounded-2xl shadow-[0_1px_3px_rgba(16,17,20,0.04)] overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-smoke/15 bg-paper/40">
+                {["User", "Role", "Phone", "Orders", "Spent", "Status", "Joined", ""].map((h) => (
+                  <th key={h} className="text-left px-4 py-3 text-[10px] uppercase tracking-[-0.005em] text-smoke font-medium whitespace-nowrap">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-smoke/5">
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center text-smoke text-sm">
+                    Loading…
+                  </td>
+                </tr>
+              ) : users.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center">
+                    <Users size={28} className="text-smoke/30 mx-auto mb-2" strokeWidth={1} />
+                    <p className="text-sm text-smoke">No users found</p>
+                  </td>
+                </tr>
+              ) : (
+                users.map((user) => (
+                  <tr
+                    key={user._id}
+                    onClick={() => setDetailId(detailId === user._id ? null : user._id)}
+                    className={`hover:bg-paper/30 transition-colors cursor-pointer ${
+                      detailId === user._id ? "bg-paper/50" : ""
+                    }`}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <Avatar user={user} />
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-medium text-ink truncate max-w-[140px]">
+                            {user.name}
+                          </p>
+                          <p className="text-[11px] text-smoke truncate max-w-[140px]">
+                            {user.email}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <RoleBadge role={user.role} />
+                    </td>
+                    <td className="px-4 py-3 text-[12px] text-ink/70 whitespace-nowrap">
+                      {user.phone || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-[13px] font-semibold text-ink">
+                      {user.orderCount}
+                    </td>
+                    <td className="px-4 py-3 text-[13px] font-semibold text-ink whitespace-nowrap">
+                      Tk {user.totalSpent.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      {user.emailVerified ? (
+                        <span className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium whitespace-nowrap">
+                          <CheckCircle size={12} /> Verified
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-[11px] text-smoke/50 whitespace-nowrap">
+                          <XCircle size={12} /> Unverified
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-[11px] text-smoke whitespace-nowrap">
+                      {new Date(user.createdAt).toLocaleDateString("en-BD")}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div
+                        className="flex items-center gap-0.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          onClick={() => setDetailId(user._id)}
+                          title="View details"
+                          className="p-1.5 text-smoke hover:text-ink transition-colors"
+                        >
+                          <Eye size={13} strokeWidth={1.5} />
+                        </button>
+                        <button
+                          onClick={() => setEditUser(user)}
+                          title="Edit"
+                          className="p-1.5 text-smoke hover:text-ink transition-colors"
+                        >
+                          <Pencil size={13} strokeWidth={1.5} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(user)}
+                          title="Delete"
+                          className="p-1.5 text-smoke hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 size={13} strokeWidth={1.5} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {pages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-smoke/10">
+            <p className="text-[11px] text-smoke">
+              Page {page} of {pages} · {total} users
+            </p>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="p-1.5 text-smoke hover:text-ink disabled:opacity-30 transition-colors"
+              >
+                <ChevronLeft size={16} strokeWidth={2} />
+              </button>
+              {Array.from({ length: Math.min(pages, 5) }, (_, i) => {
+                const p = page <= 3 ? i + 1 : page - 2 + i;
+                if (p < 1 || p > pages) return null;
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`w-7 h-7 text-[12px] transition-colors ${
+                      p === page
+                        ? "bg-signal text-white"
+                        : "text-smoke hover:text-ink"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setPage((p) => Math.min(pages, p + 1))}
+                disabled={page === pages}
+                className="p-1.5 text-smoke hover:text-ink disabled:opacity-30 transition-colors"
+              >
+                <ChevronRight size={16} strokeWidth={2} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* User detail drawer */}
+      {detailId && (
+        <UserDetailDrawer
+          userId={detailId}
+          onClose={() => setDetailId(null)}
+          onEdit={(u) => { setEditUser(u); setDetailId(null); }}
+          onDelete={(u) => { handleDelete(u); setDetailId(null); }}
+        />
+      )}
+
+      {/* Edit modal */}
+      {editUser && (
+        <UserFormModal
+          mode="edit"
+          user={editUser}
+          actorRole={actorRole}
+          grantablePerms={grantablePerms}
+          onClose={() => setEditUser(null)}
+          onSaved={handleSaved}
+        />
+      )}
+
+      {/* Create modal */}
+      {createOpen && (
+        <UserFormModal
+          mode="create"
+          actorRole={actorRole}
+          grantablePerms={grantablePerms}
+          onClose={() => setCreateOpen(false)}
+          onSaved={handleSaved}
+        />
+      )}
+    </div>
+  );
+}
