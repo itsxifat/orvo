@@ -131,20 +131,20 @@ async function run() {
     }
   }
 
-  // settings.heroSlides[].imageDesktop / imageMobile
+  // settings.heroBanners[].imageDesktop / imageMobile
   for await (const doc of db.collection("settings").find({
-    $or: [{ "heroSlides.imageDesktop": /^\/uploads\// }, { "heroSlides.imageMobile": /^\/uploads\// }],
+    $or: [{ "heroBanners.imageDesktop": /^\/uploads\// }, { "heroBanners.imageMobile": /^\/uploads\// }],
   })) {
     let changed = false;
-    const heroSlides = doc.heroSlides || [];
-    for (const s of heroSlides) {
+    const heroBanners = doc.heroBanners || [];
+    for (const s of heroBanners) {
       for (const key of ["imageDesktop", "imageMobile"]) {
         const p = await toProxyPath(s[key]);
         if (p) { s[key] = p; changed = true; }
       }
     }
     if (changed) {
-      if (!DRY_RUN) await db.collection("settings").updateOne({ _id: doc._id }, { $set: { heroSlides } });
+      if (!DRY_RUN) await db.collection("settings").updateOne({ _id: doc._id }, { $set: { heroBanners } });
       docsChanged++;
     }
   }
@@ -152,8 +152,8 @@ async function run() {
   // verification: any /uploads/ left anywhere?
   const stillLocal = [];
   for (const [coll, field] of [["products", "images"], ["categories", "image"], ["users", "image"],
-    ["orders", "items.image"], ["settings", "siteInfo.logo"], ["settings", "heroSlides.imageDesktop"],
-    ["settings", "heroSlides.imageMobile"]]) {
+    ["orders", "items.image"], ["settings", "siteInfo.logo"], ["settings", "heroBanners.imageDesktop"],
+    ["settings", "heroBanners.imageMobile"]]) {
     const n = await db.collection(coll).countDocuments({ [field]: /^\/uploads\// });
     if (n) stillLocal.push(`${coll}.${field}: ${n}`);
   }

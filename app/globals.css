@@ -10,7 +10,10 @@
    ───────────────────────────────────────────────────────────────────────────*/
 
 :root {
-  --header-h: 92px;
+  /* 48px promise strip + 64px bar. The Navbar flips [data-strip] on <html>:
+     "down" at the top of the page, "up" once you scroll, "off" when the
+     merchant has disabled the strip. */
+  --header-h: 112px;
   --background: #F8F7F4;
   --foreground: #0F0F11;
   --beam: #FFC93C;
@@ -20,17 +23,9 @@
   --hairline: #E6E3DC;
 }
 
-html[data-ticker="off"] {
+html[data-strip="up"],
+html[data-strip="off"] {
   --header-h: 64px;
-}
-
-@media (min-width: 1024px) {
-  :root {
-    --header-h: 100px;
-  }
-  html[data-ticker="off"] {
-    --header-h: 72px;
-  }
 }
 
 @layer base {
@@ -86,7 +81,7 @@ html[data-ticker="off"] {
 
 @layer components {
   .container-custom {
-    @apply w-full max-w-frame mx-auto px-5 sm:px-8 lg:px-10;
+    @apply w-full max-w-frame mx-auto px-5 sm:px-8 lg:px-10 2xl:px-14;
   }
 
   /* ── Buttons — pills, always ───────────────────────────────────────────── */
@@ -262,18 +257,8 @@ html[data-ticker="off"] {
 
   @media (min-width: 1024px) {
     .pl-frame {
-      padding-left: max(2.5rem, calc((100vw - 1400px) / 2 + 2.5rem));
+      padding-left: max(2.5rem, calc((100vw - 1680px) / 2 + 2.5rem));
     }
-  }
-
-  .marquee-track {
-    display: flex;
-    width: max-content;
-    will-change: transform;
-  }
-
-  .pause-on-hover:hover .marquee-track {
-    animation-play-state: paused;
   }
 
   /* Clip a rounded image so the corners survive a transform on hover. */
@@ -304,8 +289,3 @@ html[data-ticker="off"] {
   display: none !important;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .marquee-track {
-    animation: none !important;
-  }
-}

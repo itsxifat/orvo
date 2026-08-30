@@ -14,45 +14,10 @@ import { shouldUnoptimizeImage } from "@/lib/utils";
 import { track } from "@/lib/tracking/client";
 import { isStaff } from "@/lib/permissions";
 import Wordmark from "@/components/brand/Wordmark";
+import TopStrip from "@/components/layout/TopStrip";
 
 let _navCache = null;
 let _navCacheTs = 0;
-
-// Shown in the ticker until the admin sets an announcement of their own.
-const DEFAULT_TICKER = [
-  "Free delivery over Tk 1500",
-  "Cash on delivery nationwide",
-  "New drops every Thursday",
-  "7-day easy exchange",
-];
-
-// ─── Ticker ───────────────────────────────────────────────────────────────────
-
-function Ticker({ text, link }) {
-  const messages = text ? [text] : DEFAULT_TICKER;
-  const run = [...messages, ...messages, ...messages, ...messages];
-
-  const strip = (
-    <div className="marquee-track animate-marquee-slow">
-      {[0, 1].map((copy) => (
-        <div key={copy} className="flex items-center shrink-0">
-          {run.map((m, i) => (
-            <span key={`${copy}-${i}`} className="flex items-center shrink-0">
-              <span className="text-[12.5px] font-medium px-5 whitespace-nowrap">{m}</span>
-              <span className="w-1 h-1 rounded-full bg-ink/25 shrink-0" />
-            </span>
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-
-  return (
-    <div className="h-9 bg-beam text-ink overflow-hidden flex items-center pause-on-hover">
-      {link ? <Link href={link} className="w-full">{strip}</Link> : strip}
-    </div>
-  );
-}
 
 // ─── Desktop nav ──────────────────────────────────────────────────────────────
 
@@ -385,6 +350,7 @@ export default function Navbar() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState(null);
   const [scrolled, setScrolled] = useState(false);
+  const [stripUp, setStripUp] = useState(false);
   const [navItems, setNavItems] = useState([]);
   const [announcement, setAnnouncement] = useState({ enabled: true, text: "", link: "" });
 
@@ -409,7 +375,11 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8);
+    const onScroll = () => {
+      const y = window.scrollY;
+      setScrolled(y > 8);
+      setStripUp(y > 24);
+    };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -437,21 +407,30 @@ export default function Navbar() {
 
   // Keep --header-h honest so every sticky panel below lines up with the bar.
   useEffect(() => {
-    document.documentElement.dataset.ticker = announcement.enabled ? "on" : "off";
-  }, [announcement.enabled]);
+    document.documentElement.dataset.strip = !announcement.enabled
+      ? "off"
+      : stripUp
+      ? "up"
+      : "down";
+  }, [announcement.enabled, stripUp]);
 
   const closeMobile = useCallback(() => setMobileOpen(false), []);
   const closeMenu = useCallback(() => setOpenMenu(null), []);
   const activeItem = navItems.find((i) => i._id === openMenu);
-  const showTicker = announcement.enabled;
+  const showStrip = announcement.enabled;
 
   const iconBtn =
     "w-10 h-10 rounded-full flex items-center justify-center text-ink hover:bg-haze transition-colors";
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-40" onMouseLeave={closeMenu}>
-        {showTicker && <Ticker text={announcement.text} link={announcement.link} />}
+      <header
+        className={`fixed top-0 left-0 right-0 z-40 transition-transform duration-300 ease-out ${
+          showStrip && stripUp ? "-translate-y-12" : "translate-y-0"
+        }`}
+        onMouseLeave={closeMenu}
+      >
+        {showStrip && <TopStrip text={announcement.text} link={announcement.link} />}
 
         <div
           className={`relative transition-all duration-300 ${

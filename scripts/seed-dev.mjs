@@ -38,12 +38,14 @@ const IMG = {
   rackMen: "https://images.unsplash.com/photo-1441984904996-e0b6ba687e04?w=1400&q=80",
   rackWomen: "https://images.unsplash.com/photo-1567401893414-76b7b1e5a7a5?w=1400&q=80",
   rackKids: "https://images.unsplash.com/photo-1471286174890-9c112ffca5b4?w=1400&q=80",
-  heroA: "https://images.unsplash.com/photo-1483985988355-763728e1935b?w=1760&q=80",
-  heroAm: "https://images.unsplash.com/photo-1483985988355-763728e1935b?w=900&q=80",
-  heroB: "https://images.unsplash.com/photo-1445205170230-053b83016050?w=1760&q=80",
-  heroBm: "https://images.unsplash.com/photo-1445205170230-053b83016050?w=900&q=80",
-  heroC: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1760&q=80",
-  heroCm: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=900&q=80",
+  // Hero banners. Seeded at three, so the desktop art is the 800 × 1000 (4:5)
+  // three-up slot; mobile art is 1080 × 1350 (4:5) for every count.
+  banner1: "https://images.unsplash.com/photo-1483985988355-763728e1935b?w=800&h=1000&fit=crop&q=80",
+  banner1m: "https://images.unsplash.com/photo-1483985988355-763728e1935b?w=1080&h=1350&fit=crop&q=80",
+  banner2: "https://images.unsplash.com/photo-1445205170230-053b83016050?w=800&h=1000&fit=crop&q=80",
+  banner2m: "https://images.unsplash.com/photo-1445205170230-053b83016050?w=1080&h=1350&fit=crop&q=80",
+  banner3: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=800&h=1000&fit=crop&q=80",
+  banner3m: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1080&h=1350&fit=crop&q=80",
 };
 
 const sizes = (spec) =>
@@ -354,24 +356,18 @@ async function main() {
       freeShippingEnabled: true, freeShippingThreshold: 1500,
       insideDhaka: 60, suburbs: 100, outsideDhaka: 130,
     },
-    heroSlides: [
+    heroBanners: [
       {
-        imageDesktop: IMG.heroA, imageMobile: IMG.heroAm, href: "/shop",
-        eyebrow: "Season 01", title: "Built for the everyday",
-        subtitle: "Considered cuts, honest fabric, priced to be worn out — not saved for later.",
-        ctaLabel: "Shop the drop",
+        imageDesktop: IMG.banner1, imageMobile: IMG.banner1m,
+        href: "/shop", alt: "Season 01 — shop the new drop",
       },
       {
-        imageDesktop: IMG.heroB, imageMobile: IMG.heroBm, href: "/shop?newArrival=true",
-        eyebrow: "Just landed", title: "New arrivals",
-        subtitle: "Fresh pieces added every Thursday, in limited runs.",
-        ctaLabel: "See what is new",
+        imageDesktop: IMG.banner2, imageMobile: IMG.banner2m,
+        href: "/shop?newArrival=true", alt: "New arrivals, added every Thursday",
       },
       {
-        imageDesktop: IMG.heroC, imageMobile: IMG.heroCm, href: "/shop?category=women",
-        eyebrow: "The women's line", title: "Shapes that hold",
-        subtitle: "Column dresses, fine merino and a wide crop trouser that actually fits.",
-        ctaLabel: "Shop women",
+        imageDesktop: IMG.banner3, imageMobile: IMG.banner3m,
+        href: "/shop?category=women", alt: "The women's line",
       },
     ],
     navItems: [

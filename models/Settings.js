@@ -115,19 +115,27 @@ const settingsSchema = new mongoose.Schema(
       lastReconcileAt: { type: Date, default: null },
       lastWebhookAt: { type: Date, default: null },
     },
-    // Hero slides. Desktop art 1760×1100 (8:5), mobile 900×1200 (3:4).
-    // The imagery is required; the copy fields are optional — a
-    // slide with no title renders as a clean full-bleed image, one with a title
-    // renders as the split editorial panel.
-    heroSlides: [
+    // Homepage hero banners — up to three, laid out side by side. There is no
+    // slider: whatever is here is all visible at once, and the grid re-forms
+    // for 1, 2 or 3.
+    //
+    // Every layout resolves to the same band height, so the page rhythm does
+    // not change when the count does. Each slot's aspect ratio matches its
+    // artwork exactly, which is what keeps banners from ever being cropped:
+    //
+    //   count │ desktop slot        │ upload (desktop) │ upload (mobile)
+    //   ──────┼─────────────────────┼──────────────────┼────────────────
+    //     1   │ full width, 12:5    │ 2400 × 1000      │ 1080 × 1350
+    //     2   │ half width,   6:5   │ 1200 × 1000      │ 1080 × 1350
+    //     3   │ third width,  4:5   │  800 × 1000      │ 1080 × 1350
+    //
+    // Copy is baked into the artwork; the banner itself carries only a link.
+    heroBanners: [
       {
         imageDesktop: { type: String, default: "" },
-        imageMobile:  { type: String, default: "" },
+        imageMobile:  { type: String, default: "" }, // falls back to the desktop art
         href:         { type: String, default: "/" },
-        eyebrow:      { type: String, default: "" }, // small label above the headline
-        title:        { type: String, default: "" }, // the headline itself
-        subtitle:     { type: String, default: "" }, // one supporting line
-        ctaLabel:     { type: String, default: "" }, // button text; falls back to "Shop now"
+        alt:          { type: String, default: "" }, // what the banner says, for screen readers
       },
     ],
     // Navbar items — ordered list of what appears in the top navigation

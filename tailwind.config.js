@@ -63,15 +63,13 @@ module.exports = {
         inset: "inset 0 0 0 1px rgba(15,15,17,0.06)",
       },
       maxWidth: {
-        frame: "1400px",
+        frame: "1680px",
       },
       animation: {
         "fade-in": "fadeIn 0.3s ease-in-out",
         "slide-in-right": "slideInRight 0.3s ease-out",
         "slide-in-left": "slideInLeft 0.3s ease-out",
         "slide-up": "slideUp 0.35s cubic-bezier(0.22, 1, 0.36, 1)",
-        marquee: "marquee 34s linear infinite",
-        "marquee-slow": "marquee 60s linear infinite",
         rise: "rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both",
         "pulse-dot": "pulseDot 1.8s ease-in-out infinite",
         float: "float 7s ease-in-out infinite",
@@ -92,10 +90,6 @@ module.exports = {
         slideUp: {
           "0%": { transform: "translateY(24px)", opacity: "0" },
           "100%": { transform: "translateY(0)", opacity: "1" },
-        },
-        marquee: {
-          "0%": { transform: "translateX(0)" },
-          "100%": { transform: "translateX(-50%)" },
         },
         rise: {
           "0%": { transform: "translateY(18px)", opacity: "0" },

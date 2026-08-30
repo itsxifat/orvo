@@ -6,7 +6,7 @@ import Category from "@/models/Category";
 import Settings from "@/models/Settings";
 import { serializeDoc } from "@/lib/utils";
 import { getActiveFlashSalePublic } from "@/lib/flashSale";
-import HeroSlider from "@/components/home/HeroSlider";
+import HeroBanners from "@/components/home/HeroBanners";
 import CategoryGrid from "@/components/home/CategoryGrid";
 import FlashSaleSection from "@/components/home/FlashSaleSection";
 import FeaturedProducts from "@/components/home/FeaturedProducts";
@@ -68,25 +68,25 @@ async function getHomeData() {
       featuredProducts: serializeDoc(featured),
       newArrivals: serializeDoc(arrivals),
       categories: serializeDoc(categories),
-      heroSlides: serializeDoc(settings?.heroSlides || []),
+      heroBanners: serializeDoc(settings?.heroBanners || []),
       promoBanner: serializeDoc(settings?.promoBanner || null),
       testimonials: serializeDoc(settings?.testimonials || []),
       flashSale: serializeDoc(flashSale),
     };
   } catch {
-    return { featuredProducts: [], newArrivals: [], categories: [], heroSlides: [], promoBanner: null, testimonials: [], flashSale: null };
+    return { featuredProducts: [], newArrivals: [], categories: [], heroBanners: [], promoBanner: null, testimonials: [], flashSale: null };
   }
 }
 
 export default async function HomePage() {
-  const { featuredProducts, newArrivals, categories, heroSlides, promoBanner, testimonials, flashSale } = await getHomeData();
+  const { featuredProducts, newArrivals, categories, heroBanners, promoBanner, testimonials, flashSale } = await getHomeData();
 
   return (
     <>
       <TrackingBootstrap />
       <Navbar />
       <main>
-        <HeroSlider slides={heroSlides} />
+        <HeroBanners banners={heroBanners} />
         <FlashSaleSection sale={flashSale} />
         <CategoryGrid categories={categories} />
         <FeaturedProducts products={featuredProducts} />

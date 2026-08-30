@@ -6,10 +6,10 @@ import Settings from "@/models/Settings";
 import { requireAdmin } from "@/lib/auth";
 import { deleteImageIfUnreferenced } from "@/lib/images";
 
-// Collect every image URL referenced by a set of hero slides.
-function slideImages(slides) {
+// Collect every image URL referenced by a set of hero banners.
+function bannerImages(banners) {
   const set = new Set();
-  for (const s of slides || []) {
+  for (const s of banners || []) {
     if (s?.imageDesktop) set.add(s.imageDesktop);
     if (s?.imageMobile) set.add(s.imageMobile);
   }
@@ -21,7 +21,7 @@ export async function GET() {
     await connectDB();
     let settings = await Settings.findOne({}).lean();
     if (!settings) settings = (await Settings.create({})).toObject();
-    return NextResponse.json({ heroSlides: settings.heroSlides || [] });
+    return NextResponse.json({ heroBanners: settings.heroBanners || [] });
   } catch {
     return NextResponse.json({ error: "Failed to fetch" }, { status: 500 });
   }
@@ -33,15 +33,17 @@ export async function PUT(request) {
 
   try {
     await connectDB();
-    const { heroSlides } = await request.json();
+    const { heroBanners } = await request.json();
+    // Three is the hard cap the storefront grid is built around.
+    const banners = (Array.isArray(heroBanners) ? heroBanners : []).slice(0, 3);
 
-    const before = await Settings.findOne({}).select("heroSlides").lean();
-    await Settings.findOneAndUpdate({}, { $set: { heroSlides } }, { upsert: true });
+    const before = await Settings.findOne({}).select("heroBanners").lean();
+    await Settings.findOneAndUpdate({}, { $set: { heroBanners: banners } }, { upsert: true });
 
-    // Delete from the CDN any image that a slide used before but doesn't now
-    // (slide removed, image cleared, or image replaced).
-    const next = slideImages(heroSlides);
-    const removed = [...slideImages(before?.heroSlides)].filter((u) => !next.has(u));
+    // Delete from the CDN any image that a banner used before but doesn't now
+    // (banner removed, image cleared, or image replaced).
+    const next = bannerImages(banners);
+    const removed = [...bannerImages(before?.heroBanners)].filter((u) => !next.has(u));
     await Promise.all(removed.map((u) => deleteImageIfUnreferenced(u)));
 
     return NextResponse.json({ ok: true });
