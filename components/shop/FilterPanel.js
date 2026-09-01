@@ -36,7 +36,7 @@ function Block({ title, children, defaultOpen = true }) {
       >
         <span className="text-[16px] font-semibold text-ink tracking-[-0.02em]">{title}</span>
         <span
-          className={`w-8 h-8 rounded-full bg-haze flex items-center justify-center text-ink transition-transform duration-200 ${
+          className={`flex h-8 w-8 items-center justify-center rounded-full bg-haze text-ink transition-transform duration-base ease-settle ${
             open ? "rotate-180" : ""
           }`}
         >
@@ -55,7 +55,7 @@ function Tick({ on, label, onClick }) {
         {label}
       </span>
       <span
-        className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all ${
+        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors duration-fast ease-swift ${
           on ? "bg-ink" : "bg-haze group-hover:bg-haze-dark"
         }`}
       >
@@ -92,7 +92,7 @@ function CatNode({ cat, depth, current, onPick }) {
             type="button"
             onClick={() => setOpen((o) => !o)}
             aria-label={open ? "Collapse" : "Expand"}
-            className={`w-6 h-6 rounded-full flex items-center justify-center text-smoke hover:bg-haze transition-all shrink-0 ${
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-smoke transition-[background-color,transform] duration-base ease-settle hover:bg-haze ${
               open ? "rotate-180" : ""
             }`}
           >
@@ -169,14 +169,14 @@ export default function FilterPanel({ open, onClose, categories = [] }) {
     <>
       <div
         onClick={onClose}
-        className={`fixed inset-0 z-[65] bg-ink/40 backdrop-blur-sm transition-opacity duration-300 ${
+        className={`fixed inset-0 z-[65] bg-ink/40 backdrop-blur-sm transition-opacity duration-slow ease-swift ${
           open ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       />
 
       <aside
         aria-hidden={!open}
-        className={`fixed inset-y-3 right-3 z-[75] w-[92%] max-w-[420px] rounded-4xl bg-paper-pure shadow-pop flex flex-col overflow-hidden transform transition-transform duration-300 ease-out ${
+        className={`fixed inset-y-3 right-3 z-[75] flex w-[92%] max-w-[420px] flex-col overflow-hidden rounded-4xl bg-paper-pure shadow-pop transition-transform duration-slow ease-soft ${
           open ? "translate-x-0" : "translate-x-[calc(100%+1rem)]"
         }`}
       >
@@ -184,7 +184,7 @@ export default function FilterPanel({ open, onClose, categories = [] }) {
           <p className="text-[20px] font-bold text-ink tracking-[-0.03em]">Filters</p>
           <button
             onClick={onClose}
-            className="w-10 h-10 -mr-1 rounded-full bg-haze hover:bg-haze-dark flex items-center justify-center text-ink transition-colors"
+            className="press -mr-1 flex h-10 w-10 items-center justify-center rounded-full bg-haze text-ink transition-colors duration-fast ease-swift hover:bg-haze-dark"
             aria-label="Close filters"
           >
             <X size={19} strokeWidth={2} />

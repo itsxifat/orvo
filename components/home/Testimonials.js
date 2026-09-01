@@ -21,11 +21,11 @@ export default function Testimonials({ testimonials = [] }) {
     testimonials.reduce((sum, t) => sum + (t.rating || 5), 0) / testimonials.length;
 
   return (
-    <section className="py-14 md:py-20">
+    <section className="py-12 md:py-20">
       <div className="container-custom">
-        <SectionHead eyebrow="Straight from customers" title="Worn and rated" />
+        <SectionHead title="Worn and rated" />
 
-        <div className="flex items-center gap-3 -mt-4 mb-8">
+        <div className="-mt-3 mb-7 flex items-center gap-3 md:-mt-4 md:mb-8">
           <div className="flex gap-0.5">
             {Array.from({ length: 5 }).map((_, i) => (
               <Star
@@ -42,12 +42,13 @@ export default function Testimonials({ testimonials = [] }) {
         </div>
       </div>
 
-      <div className="overflow-x-auto scrollbar-hide">
-        <div className="flex gap-4 md:gap-5 px-5 sm:px-8 lg:px-10 min-w-max">
+      {/* Snapped, so a flick lands on a card instead of halfway between two.
+          The cards are sized to leave the next one visibly peeking. */}
+      <div className="rail scrollbar-hide gap-4 px-5 sm:px-8 md:gap-5 lg:px-10">
           {testimonials.map((t, i) => (
             <figure
               key={t._id || i}
-              className="w-[300px] sm:w-[380px] shrink-0 rounded-3xl bg-paper-pure shadow-soft p-7 flex flex-col"
+              className="flex w-[80vw] max-w-[380px] flex-col rounded-3xl bg-paper-pure p-6 shadow-soft sm:w-[380px] sm:p-7"
             >
               <div className="flex gap-0.5">
                 {Array.from({ length: 5 }).map((_, j) => (
@@ -59,11 +60,11 @@ export default function Testimonials({ testimonials = [] }) {
                 ))}
               </div>
 
-              <blockquote className="text-[15.5px] leading-[1.65] text-ink/80 mt-5 flex-1">
+              <blockquote className="mt-4 flex-1 text-[15px] leading-[1.65] text-ink/80 sm:mt-5 sm:text-[15.5px]">
                 {t.text}
               </blockquote>
 
-              <figcaption className="flex items-center gap-3 mt-7">
+              <figcaption className="mt-6 flex items-center gap-3 sm:mt-7">
                 <span className="w-11 h-11 rounded-full bg-beam text-ink flex items-center justify-center text-[14px] font-bold shrink-0">
                   {getInitials(t.name)}
                 </span>
@@ -76,9 +77,8 @@ export default function Testimonials({ testimonials = [] }) {
               </figcaption>
             </figure>
           ))}
-          {/* Tail spacer so the last card can clear the right edge */}
-          <span className="w-1 shrink-0" aria-hidden />
-        </div>
+        {/* Tail spacer so the last card can clear the right edge */}
+        <span className="w-1 shrink-0" aria-hidden />
       </div>
     </section>
   );

@@ -60,7 +60,7 @@ function LoginForm() {
         </div>
       )}
 
-      <AuthHeading eyebrow="Welcome back" title="Sign in to Orvo">
+      <AuthHeading title="Sign in to Orvo">
         Good to see you again.
       </AuthHeading>
 

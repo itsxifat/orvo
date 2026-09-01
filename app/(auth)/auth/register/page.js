@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useForm } from "react-hook-form";
+import { bdPhoneField } from "@/lib/phone-field";
 import toast from "react-hot-toast";
 import AuthShell from "@/components/auth/AuthShell";
 import {
@@ -16,7 +17,7 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  const { register, handleSubmit, watch, formState: { errors } } = useForm();
+  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm();
 
   const onSubmit = async (data) => {
     setLoading(true);
@@ -58,7 +59,7 @@ export default function RegisterPage() {
 
   return (
     <AuthShell aside={{ label: "Sign in", href: "/auth/login" }}>
-      <AuthHeading eyebrow="Get started" title="Create your account">
+      <AuthHeading title="Create your account">
         It takes about a minute.
       </AuthHeading>
 
@@ -88,17 +89,10 @@ export default function RegisterPage() {
             and attach them to this account. */}
         <Field
           label="Mobile number"
-          type="tel"
           placeholder="01XXXXXXXXX"
-          autoComplete="tel"
           error={errors.phone?.message}
           hint="Optional — ordered before without an account? Add it to find those orders."
-          {...register("phone", {
-            validate: (v) =>
-              !v ||
-              /^01\d{9}$/.test(v.replace(/\D/g, "").replace(/^88/, "")) ||
-              "Enter a valid 11-digit number",
-          })}
+          {...bdPhoneField(register, setValue, "phone")}
         />
 
         <PasswordField

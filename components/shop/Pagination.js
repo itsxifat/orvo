@@ -24,7 +24,7 @@ export default function Pagination({ page, totalPages }) {
   }
 
   const round =
-    "w-11 h-11 rounded-full flex items-center justify-center transition-all duration-200";
+    "press flex h-11 w-11 items-center justify-center rounded-full transition-colors duration-fast ease-swift";
 
   return (
     <div className="mt-14 flex items-center justify-center gap-2">

@@ -16,11 +16,10 @@ export const GoogleIcon = () => (
   </svg>
 );
 
-export function AuthHeading({ eyebrow, title, children }) {
+export function AuthHeading({ title, children }) {
   return (
     <div className="mb-8">
-      {eyebrow && <span className="eyebrow-beam">{eyebrow}</span>}
-      <h1 className="text-[clamp(1.9rem,3vw,2.4rem)] font-bold text-ink leading-[1.05] tracking-[-0.035em] mt-4">
+      <h1 className="text-[clamp(1.9rem,3vw,2.4rem)] font-bold text-ink leading-[1.05] tracking-[-0.035em]">
         {title}
       </h1>
       {children && (

@@ -1,16 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { X, MessageCircle, ChevronRight, Truck, RefreshCw, ShieldCheck } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
 import ImageGallery from "@/components/product/ImageGallery";
 import VariantSelector from "@/components/product/VariantSelector";
 import AddToCartButton from "@/components/product/AddToCartButton";
+import MobileBuyBar from "@/components/product/MobileBuyBar";
 import ProductCard from "@/components/shop/ProductCard";
 import SectionHead from "@/components/home/SectionHead";
 import { track } from "@/lib/tracking/client";
 import { useSettings } from "@/context/SettingsContext";
+import Reveal from "@/components/motion/Reveal";
 
 const SERVICE = [
   { Icon: Truck, label: "Ships in 24h", note: "2–4 days nationwide" },
@@ -21,8 +23,8 @@ const SERVICE = [
 function SizeChartModal({ chart, onClose }) {
   return (
     <div className="fixed inset-0 z-[85] flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-ink/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full sm:max-w-2xl max-h-[86vh] rounded-t-4xl sm:rounded-4xl bg-paper-pure shadow-pop flex flex-col animate-slide-up sm:animate-none overflow-hidden">
+      <div className="absolute inset-0 animate-fade-in bg-ink/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative flex max-h-[86vh] w-full animate-sheet-up flex-col overflow-hidden rounded-t-4xl bg-paper-pure shadow-pop sm:max-w-2xl sm:animate-pop sm:rounded-4xl">
         <div className="flex items-center justify-between px-6 sm:px-8 py-5 shrink-0">
           <div>
             <p className="text-[19px] font-bold text-ink tracking-[-0.03em]">{chart.name}</p>
@@ -30,7 +32,7 @@ function SizeChartModal({ chart, onClose }) {
           </div>
           <button
             onClick={onClose}
-            className="w-10 h-10 -mr-1 rounded-full bg-haze hover:bg-haze-dark flex items-center justify-center text-ink transition-colors"
+            className="press -mr-1 flex h-10 w-10 items-center justify-center rounded-full bg-haze text-ink transition-colors duration-fast ease-swift hover:bg-haze-dark"
             aria-label="Close size guide"
           >
             <X size={19} strokeWidth={2} />
@@ -76,6 +78,15 @@ export default function ProductDetailClient({ product, related = [], categoryPat
   const [showSizeChart, setShowSizeChart] = useState(false);
   const [tab, setTab] = useState("details");
 
+  // The buy bar shows itself when this block leaves the screen, and sends the
+  // reader back to the sizes when they tap it without one picked.
+  const buyBlockRef = useRef(null);
+  const sizeBlockRef = useRef(null);
+
+  const scrollToSizes = useCallback(() => {
+    sizeBlockRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
   const variants = product.variants || [];
   const selectedVariant = variants.find((v) => v.size === selectedSize);
   const prices = variants.map((v) => v.price);
@@ -113,9 +124,9 @@ export default function ProductDetailClient({ product, related = [], categoryPat
   const activeTab = tabs.some((t) => t.key === tab) ? tab : tabs[0]?.key;
 
   return (
-    <div className="container-custom pb-16">
+    <div className="container-custom pb-28 lg:pb-16">
       {/* ── Breadcrumb ──────────────────────────────────────────────────────*/}
-      <nav className="flex items-center gap-1.5 py-5 overflow-x-auto text-[13.5px] text-smoke whitespace-nowrap">
+      <nav className="scrollbar-hide flex items-center gap-1.5 overflow-x-auto whitespace-nowrap py-4 text-[13px] text-smoke md:py-5 md:text-[13.5px]">
         <Link href="/" className="hover:text-ink transition-colors">Home</Link>
         <ChevronRight size={13} strokeWidth={2.2} className="text-smoke-light" />
         <Link href="/shop" className="hover:text-ink transition-colors">Shop</Link>
@@ -131,7 +142,7 @@ export default function ProductDetailClient({ product, related = [], categoryPat
         <span className="text-ink font-medium truncate max-w-[220px]">{product.name}</span>
       </nav>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(380px,450px)] lg:gap-12">
+      <div className="mx-auto grid w-full max-w-[1280px] grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(400px,470px)] lg:gap-12">
 
         {/* ── Gallery ───────────────────────────────────────────────────────*/}
         <div className="pb-8 lg:pb-0">
@@ -140,7 +151,7 @@ export default function ProductDetailClient({ product, related = [], categoryPat
 
         {/* ── Buy panel ─────────────────────────────────────────────────────*/}
         <div className="lg:sticky lg:top-[calc(var(--header-h)+16px)] lg:self-start">
-          <div className="rounded-4xl bg-paper-pure shadow-soft p-6 sm:p-8">
+          <div className="rounded-4xl bg-paper-pure p-5 shadow-soft sm:p-8">
 
             <div className="flex items-center gap-2 flex-wrap">
               {product.category && (
@@ -177,7 +188,7 @@ export default function ProductDetailClient({ product, related = [], categoryPat
               </p>
             </div>
 
-            <div className="mt-6">
+            <div ref={sizeBlockRef} className="mt-6 scroll-mt-[calc(var(--header-h)+24px)]">
               <VariantSelector
                 variants={variants}
                 selectedSize={selectedSize}
@@ -187,7 +198,7 @@ export default function ProductDetailClient({ product, related = [], categoryPat
               />
             </div>
 
-            <div className="mt-6 space-y-3">
+            <div ref={buyBlockRef} className="mt-6 space-y-3">
               <AddToCartButton
                 product={product}
                 selectedSize={selectedSize}
@@ -204,13 +215,20 @@ export default function ProductDetailClient({ product, related = [], categoryPat
               </a>
             </div>
 
-            {/* Service strip */}
-            <div className="grid grid-cols-3 gap-2 mt-7">
+            {/* Service strip. Three 100px columns on a phone turned every one
+                of these into three wrapped lines, so on small screens they run
+                as rows and read as sentences instead. */}
+            <div className="mt-7 grid grid-cols-1 gap-2 sm:grid-cols-3">
               {SERVICE.map(({ Icon, label, note }) => (
-                <div key={label} className="rounded-2xl bg-haze px-3 py-4 text-center">
-                  <Icon size={17} strokeWidth={2} className="text-ink mx-auto mb-2" />
-                  <p className="text-[12.5px] font-semibold text-ink leading-tight">{label}</p>
-                  <p className="text-[11.5px] text-smoke mt-0.5 leading-tight">{note}</p>
+                <div
+                  key={label}
+                  className="flex items-center gap-3 rounded-2xl bg-haze px-4 py-3 sm:flex-col sm:gap-0 sm:px-3 sm:py-4 sm:text-center"
+                >
+                  <Icon size={17} strokeWidth={2} className="shrink-0 text-ink sm:mb-2" />
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-semibold leading-tight text-ink sm:text-[12.5px]">{label}</p>
+                    <p className="mt-0.5 text-[12px] leading-tight text-smoke sm:text-[11.5px]">{note}</p>
+                  </div>
                 </div>
               ))}
             </div>
@@ -223,7 +241,7 @@ export default function ProductDetailClient({ product, related = [], categoryPat
                     <button
                       key={t.key}
                       onClick={() => setTab(t.key)}
-                      className={`rounded-full px-4 py-2 text-[13.5px] font-medium transition-colors ${
+                      className={`rounded-full px-4 py-2 text-[13.5px] font-medium transition-colors duration-base ease-swift ${
                         activeTab === t.key
                           ? "bg-ink text-paper-pure"
                           : "bg-haze text-smoke hover:text-ink"
@@ -289,13 +307,23 @@ export default function ProductDetailClient({ product, related = [], categoryPat
         <SizeChartModal chart={product.sizeChart} onClose={() => setShowSizeChart(false)} />
       )}
 
+      <MobileBuyBar
+        product={product}
+        selectedSize={selectedSize}
+        selectedVariant={selectedVariant}
+        watchRef={buyBlockRef}
+        onNeedSize={scrollToSizes}
+      />
+
       {/* ── Related ─────────────────────────────────────────────────────────*/}
       {related.length > 0 && (
-        <section className="pt-16 md:pt-24">
-          <SectionHead eyebrow="Also in this line" title="You may also like" href="/shop" linkLabel="All products" />
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-10">
-            {related.map((p) => (
-              <ProductCard key={p._id} product={p} />
+        <section className="pt-14 md:pt-24">
+          <SectionHead title="You may also like" href="/shop" linkLabel="All products" />
+          <div className="grid grid-cols-2 gap-x-3.5 gap-y-7 sm:gap-x-5 sm:gap-y-10 md:grid-cols-4">
+            {related.map((p, i) => (
+              <Reveal key={p._id} delay={(i % 4) * 60}>
+                <ProductCard product={p} />
+              </Reveal>
             ))}
           </div>
         </section>

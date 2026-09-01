@@ -53,26 +53,38 @@ export default function QuickAddModal({ product, onClose, flashPrice = null, fla
         sku: selectedVariant.sku || "",
       },
       selectedSize,
-      quantity
+      quantity,
+      selectedVariant.stock   // caps the cart line, not just this one add
     );
     toast.success(`${product.name} added to your bag`);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-[85] flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-ink/50 backdrop-blur-sm" onClick={onClose} />
+    <div className="fixed inset-0 z-[85] flex items-end justify-center p-0 sm:items-center sm:p-4">
+      <div className="absolute inset-0 animate-fade-in bg-ink/50 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative w-full sm:max-w-[460px] rounded-t-4xl sm:rounded-4xl bg-paper-pure shadow-pop overflow-hidden animate-slide-up sm:animate-none">
+      {/* A sheet on a phone, a dialog on a desktop. The sheet rises the full
+          height of itself rather than fading in place — on a phone the gesture
+          the reader expects is something arriving from the bottom edge. */}
+      <div
+        className="relative w-full animate-sheet-up overflow-hidden rounded-t-4xl bg-paper-pure shadow-pop sm:max-w-[460px] sm:animate-pop sm:rounded-4xl"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        <span
+          aria-hidden
+          className="absolute left-1/2 top-2.5 z-10 h-1 w-9 -translate-x-1/2 rounded-full bg-ink/15 sm:hidden"
+        />
+
         <button
           onClick={onClose}
           aria-label="Close"
-          className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-paper-pure/90 backdrop-blur shadow-soft flex items-center justify-center text-ink hover:bg-haze transition-colors"
+          className="press absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-paper-pure/90 text-ink shadow-soft backdrop-blur transition-colors duration-fast ease-swift hover:bg-haze"
         >
           <X size={18} strokeWidth={2.2} />
         </button>
 
-        <div className="flex gap-4 p-4">
+        <div className="flex gap-4 p-4 pt-5 sm:pt-4">
           <Link
             href={`/shop/${product.slug}`}
             onClick={onClose}
@@ -197,7 +209,7 @@ export default function QuickAddModal({ product, onClose, flashPrice = null, fla
               type="button"
               onClick={handleAdd}
               disabled={!selectedSize || !selectedVariant || selectedVariant.stock === 0}
-              className="flex-1 rounded-full bg-ink text-paper-pure flex items-center justify-center gap-2.5 px-5 text-[15px] font-semibold tracking-[-0.01em] hover:bg-ink-soft active:scale-[0.99] disabled:bg-haze disabled:text-smoke disabled:cursor-not-allowed transition-all duration-200"
+              className="btn-base h-full flex-1 gap-2.5 bg-ink px-5 text-[15px] text-paper-pure hover:bg-ink-soft disabled:cursor-not-allowed disabled:bg-haze disabled:text-smoke"
             >
               <ShoppingBag size={16} strokeWidth={2.2} />
               {!selectedSize

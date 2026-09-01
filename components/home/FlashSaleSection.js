@@ -43,16 +43,16 @@ function Countdown({ cd }) {
   ].filter(Boolean);
 
   return (
-    <div className="flex gap-2">
+    <div className="flex gap-1.5 sm:gap-2">
       {cells.map((c) => (
         <div
           key={c.label}
-          className="w-[62px] rounded-2xl bg-white/10 backdrop-blur-sm ring-1 ring-white/10 py-2.5 text-center"
+          className="w-[54px] rounded-xl bg-white/10 py-2 text-center ring-1 ring-white/10 backdrop-blur-sm sm:w-[62px] sm:rounded-2xl sm:py-2.5"
         >
-          <p className="text-[22px] font-bold tabular-nums leading-none text-paper-pure tracking-[-0.03em]">
+          <p className="text-[19px] font-bold leading-none tracking-[-0.03em] tabular-nums text-paper-pure sm:text-[22px]">
             {pad(c.value)}
           </p>
-          <p className="text-[11px] text-white/45 mt-1.5">{c.label}</p>
+          <p className="mt-1 text-[10.5px] text-white/45 sm:mt-1.5 sm:text-[11px]">{c.label}</p>
         </div>
       ))}
     </div>
@@ -73,15 +73,15 @@ function FlashCard({ item, onAdd }) {
   const image = product.images?.[0] || "/placeholder.jpg";
 
   return (
-    <div className="group rounded-3xl bg-white/[0.04] ring-1 ring-white/10 p-3 flex flex-col transition-colors hover:bg-white/[0.07]">
-      <div className="relative rounded-2xl overflow-hidden bg-ink-soft aspect-[4/5]">
+    <div className="group flex flex-col rounded-2xl bg-white/[0.04] p-2.5 ring-1 ring-white/10 transition-colors duration-base ease-swift hover:bg-white/[0.07] sm:rounded-3xl sm:p-3">
+      <div className="relative aspect-[4/5] overflow-hidden rounded-xl bg-ink-soft sm:rounded-2xl">
         <Image
           src={image}
           alt={product.name}
           fill
           unoptimized={shouldUnoptimizeImage(image)}
-          className="object-cover transition-transform duration-[800ms] ease-out group-hover:scale-[1.06]"
-          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+          className="media-zoom object-cover"
+          sizes="(max-width: 640px) 46vw, (max-width: 1024px) 33vw, 25vw"
         />
         <Link href={`/shop/${product.slug}`} className="absolute inset-0 z-10">
           <span className="sr-only">{product.name}</span>
@@ -103,33 +103,33 @@ function FlashCard({ item, onAdd }) {
           <button
             onClick={() => onAdd(item)}
             aria-label={`Grab ${product.name}`}
-            className="absolute bottom-3 right-3 z-20 w-11 h-11 rounded-full bg-beam text-ink flex items-center justify-center shadow-beam transition-all duration-300 hover:scale-105
-                       opacity-100 md:opacity-0 md:translate-y-2 md:group-hover:opacity-100 md:group-hover:translate-y-0"
+            className="absolute bottom-2.5 right-2.5 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-beam text-ink shadow-beam transition-[opacity,transform] duration-base ease-swift active:scale-95 sm:bottom-3 sm:right-3 sm:h-11 sm:w-11
+                       can-hover:translate-y-2 can-hover:opacity-0 can-hover:group-hover:translate-y-0 can-hover:group-hover:opacity-100"
           >
             <Plus size={19} strokeWidth={2.4} />
           </button>
         )}
       </div>
 
-      <div className="pt-4 px-1.5 pb-1 flex-1 flex flex-col">
+      <div className="flex flex-1 flex-col px-1 pb-1 pt-3 sm:px-1.5 sm:pt-4">
         <Link href={`/shop/${product.slug}`}>
-          <h3 className="text-[15px] font-semibold text-paper-pure truncate tracking-[-0.015em] group-hover:text-beam transition-colors">
+          <h3 className="line-clamp-2 text-[14px] font-semibold leading-snug tracking-[-0.015em] text-paper-pure transition-colors duration-base ease-swift group-hover:text-beam sm:line-clamp-1 sm:text-[15px]">
             {product.name}
           </h3>
         </Link>
 
-        <p className="flex items-baseline gap-2 mt-1.5">
-          <span className="text-[17px] font-bold text-beam tabular-nums tracking-[-0.02em]">
+        <p className="mt-1 flex items-baseline gap-2 sm:mt-1.5">
+          <span className="text-[16px] font-bold tracking-[-0.02em] tabular-nums text-beam sm:text-[17px]">
             {formatPrice(salePrice)}
           </span>
           {origPrice > salePrice && (
-            <span className="text-[13px] text-white/35 line-through tabular-nums">
+            <span className="text-[12.5px] tabular-nums text-white/35 line-through sm:text-[13px]">
               {formatPrice(origPrice)}
             </span>
           )}
         </p>
 
-        <div className="mt-4">
+        <div className="mt-3 sm:mt-4">
           <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${
@@ -166,20 +166,28 @@ export default function FlashSaleSection({ sale }) {
 
   return (
     <section className="container-custom py-8 md:py-12">
-      <div className="relative rounded-4xl md:rounded-5xl bg-ink text-paper-pure overflow-hidden p-6 sm:p-10 lg:p-12">
-        <div aria-hidden className="absolute -top-20 left-1/3 w-[420px] h-[420px] rounded-full bg-signal/20 blur-3xl" />
+      <div className="relative overflow-hidden rounded-4xl bg-ink p-5 text-paper-pure sm:p-10 md:rounded-5xl lg:p-12">
+        <div aria-hidden className="absolute -top-20 left-1/3 h-[420px] w-[420px] rounded-full bg-signal/20 blur-3xl" />
 
-        <div className="relative flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6 mb-8">
-          <div>
-            <span className="inline-flex items-center gap-2 rounded-full bg-signal px-3 py-1.5 text-[12px] font-semibold text-white">
-              <Zap size={13} fill="currentColor" strokeWidth={0} />
-              Live now
-            </span>
-            <h2 className="text-[clamp(1.9rem,4.6vw,2.9rem)] font-bold leading-[1.02] tracking-[-0.035em] mt-4">
+        {/* On a phone the clock is the headline act, so it sits on the badge
+            row where it is read first. On a wide screen there is room for it to
+            hold the far end of the header instead. */}
+        <div className="relative mb-6 flex flex-col gap-5 sm:mb-8 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
+          <div className="min-w-0">
+            <div className="flex items-center justify-between gap-3">
+              <span className="inline-flex items-center gap-2 rounded-full bg-signal px-3 py-1.5 text-[12px] font-semibold text-white">
+                <Zap size={13} fill="currentColor" strokeWidth={0} />
+                Live now
+              </span>
+              {cd && !cd.expired && (
+                <p className="text-[12.5px] tabular-nums text-white/40 sm:hidden">Ends in</p>
+              )}
+            </div>
+            <h2 className="mt-3.5 text-[clamp(1.75rem,6.4vw,2.9rem)] font-bold leading-[1.02] tracking-[-0.035em] sm:mt-4">
               {sale.title || "Flash sale"}
             </h2>
             {sale.subtitle && (
-              <p className="text-[15px] text-white/50 mt-2.5 max-w-[52ch] leading-relaxed">
+              <p className="mt-2 max-w-[52ch] text-[14.5px] leading-relaxed text-white/50 sm:mt-2.5 sm:text-[15px]">
                 {sale.subtitle}
               </p>
             )}
@@ -187,13 +195,13 @@ export default function FlashSaleSection({ sale }) {
 
           {cd && !cd.expired && (
             <div className="shrink-0">
-              <p className="text-[12.5px] text-white/40 mb-2.5">Ends in</p>
+              <p className="mb-2.5 hidden text-[12.5px] text-white/40 sm:block">Ends in</p>
               <Countdown cd={cd} />
             </div>
           )}
         </div>
 
-        <div className="relative grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="relative grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
           {sale.items.map((item) => (
             <FlashCard key={item.product._id} item={item} onAdd={setActive} />
           ))}

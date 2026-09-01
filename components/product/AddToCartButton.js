@@ -2,42 +2,19 @@
 
 import { useState } from "react";
 import { Minus, Plus, ShoppingBag } from "lucide-react";
-import { useCart } from "@/context/CartContext";
 import { formatPrice } from "@/lib/utils";
-import toast from "react-hot-toast";
+import { useAddToBag } from "@/components/product/useAddToBag";
 
 // A rounded stepper beside a full pill button.
 export default function AddToCartButton({ product, selectedSize, selectedVariant }) {
-  const { addItem } = useCart();
   const [quantity, setQuantity] = useState(1);
+  const addToBag = useAddToBag({ product, selectedSize, selectedVariant });
 
   const isAvailable = selectedVariant && selectedVariant.stock > 0;
   const maxQty = Math.min(selectedVariant?.stock || 1, 10);
   const lineTotal = isAvailable ? selectedVariant.price * quantity : 0;
 
-  const handleAdd = () => {
-    if (!selectedSize) {
-      toast.error("Pick a size first");
-      return;
-    }
-    if (!isAvailable) {
-      toast.error("That size is out of stock");
-      return;
-    }
-    addItem(
-      {
-        id: product._id,
-        slug: product.slug,
-        name: product.name,
-        image: product.images?.[0],
-        price: selectedVariant.price,
-        sku: selectedVariant.sku || "",
-      },
-      selectedSize,
-      quantity
-    );
-    toast.success(`${product.name} added to your bag`);
-  };
+  const handleAdd = () => addToBag(quantity);
 
   const label = !selectedSize ? "Select a size" : isAvailable ? "Add to bag" : "Out of stock";
 
@@ -49,7 +26,7 @@ export default function AddToCartButton({ product, selectedSize, selectedVariant
           onClick={() => setQuantity((q) => Math.max(1, q - 1))}
           disabled={quantity <= 1}
           aria-label="Decrease quantity"
-          className="w-12 h-14 flex items-center justify-center text-ink rounded-l-full hover:bg-haze-dark disabled:text-smoke-light disabled:hover:bg-transparent transition-colors"
+          className="flex h-14 w-12 items-center justify-center rounded-l-full text-ink transition-colors duration-fast ease-swift hover:bg-haze-dark active:bg-haze-dark disabled:text-smoke-light disabled:hover:bg-transparent"
         >
           <Minus size={15} strokeWidth={2.4} />
         </button>
@@ -59,7 +36,7 @@ export default function AddToCartButton({ product, selectedSize, selectedVariant
           onClick={() => setQuantity((q) => Math.min(maxQty, q + 1))}
           disabled={quantity >= maxQty}
           aria-label="Increase quantity"
-          className="w-12 h-14 flex items-center justify-center text-ink rounded-r-full hover:bg-haze-dark disabled:text-smoke-light disabled:hover:bg-transparent transition-colors"
+          className="flex h-14 w-12 items-center justify-center rounded-r-full text-ink transition-colors duration-fast ease-swift hover:bg-haze-dark active:bg-haze-dark disabled:text-smoke-light disabled:hover:bg-transparent"
         >
           <Plus size={15} strokeWidth={2.4} />
         </button>
@@ -69,7 +46,7 @@ export default function AddToCartButton({ product, selectedSize, selectedVariant
         type="button"
         onClick={handleAdd}
         disabled={!!selectedSize && !isAvailable}
-        className="flex-1 h-14 px-6 rounded-full bg-ink text-paper-pure flex items-center justify-center gap-3 text-[15px] font-semibold tracking-[-0.01em] shadow-soft hover:bg-ink-soft hover:shadow-lift active:scale-[0.99] disabled:bg-haze disabled:text-smoke disabled:shadow-none disabled:cursor-not-allowed transition-all duration-200"
+        className="btn-base h-14 flex-1 gap-3 bg-ink px-6 text-[15px] text-paper-pure shadow-soft hover:bg-ink-soft hover:shadow-lift disabled:cursor-not-allowed disabled:bg-haze disabled:text-smoke disabled:shadow-none"
       >
         <ShoppingBag size={17} strokeWidth={2.2} />
         {label}

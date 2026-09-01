@@ -33,6 +33,12 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className={`${saira.variable} font-sans antialiased bg-paper text-ink`}>
+        {/* Scroll reveals start hidden and are shown by an IntersectionObserver.
+            With scripting off that observer never runs, so everything below the
+            first screen would stay invisible — this puts it back. */}
+        <noscript>
+          <style>{`.reveal { opacity: 1 !important; transform: none !important; }`}</style>
+        </noscript>
         <Providers>{children}</Providers>
       </body>
     </html>

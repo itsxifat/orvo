@@ -9,6 +9,10 @@
 import "dotenv/config";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
+// The app's own SKU builder, so seeded codes are byte-identical to the ones the
+// admin panel would mint ("One Size" → OS, not a code with a space in it — the
+// scanner has to be able to read these).
+import { buildVariantSku } from "../lib/sku.js";
 
 const MONGODB_URI = process.env.MONGODB_URI;
 if (!MONGODB_URI) throw new Error("MONGODB_URI is not set");
@@ -48,8 +52,48 @@ const IMG = {
   banner3m: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1080&h=1350&fit=crop&q=80",
 };
 
+const SKU_CFG = {
+  enabled: true, codeSource: "prefix", prefix: "ORV", separator: "-",
+  padding: 4, appendSize: true, appendToSlug: false,
+};
+
 const sizes = (spec) =>
   spec.map(([size, price, stock]) => ({ size, price, stock }));
+
+// The customer roster the orders below are drawn from. Order volume follows
+// this list's order — the names near the top become the repeat buyers — and the
+// last four are guest stubs (no login) so that path is represented too.
+const PEOPLE = [
+  { name: "Nusrat Jahan", email: "nusrat.jahan@example.com", phone: "01711045566",
+    street: "House 12, Road 7, Dhanmondi", city: "Dhaka", postalCode: "1205", zone: "inside_dhaka" },
+  { name: "Farhana Karim", email: "farhana.karim@example.com", phone: "01911554433",
+    street: "House 3, Sector 7, Uttara", city: "Dhaka", postalCode: "1230", zone: "inside_dhaka" },
+  { name: "Tanvir Ahmed", email: "tanvir.ahmed@example.com", phone: "01812337788",
+    street: "Flat 4B, Nasirabad Housing Society", city: "Chattogram", postalCode: "4000", zone: "outside_dhaka" },
+  { name: "Sabrina Islam", email: "sabrina.islam@example.com", phone: "01755112200",
+    street: "House 41, Road 113, Gulshan 2", city: "Dhaka", postalCode: "1212", zone: "inside_dhaka" },
+  { name: "Mahmudul Hasan", email: "mahmudul.hasan@example.com", phone: "01521446677",
+    street: "Bank Colony, Savar", city: "Savar", postalCode: "1340", zone: "suburbs" },
+  { name: "Rezaul Hoque", email: "rezaul.hoque@example.com", phone: "01611778899",
+    street: "Zindabazar Main Road", city: "Sylhet", postalCode: "3100", zone: "outside_dhaka" },
+  { name: "Ishrat Binte Alam", email: "ishrat.alam@example.com", phone: "01327889900",
+    street: "House 9, Road 2, Bashundhara R/A", city: "Dhaka", postalCode: "1229", zone: "inside_dhaka" },
+  { name: "Arif Mahmud", email: "arif.mahmud@example.com", phone: "01717334455",
+    street: "Shaheb Bazar, Ghoramara", city: "Rajshahi", postalCode: "6100", zone: "outside_dhaka" },
+  { name: "Tahmina Akter", email: "tahmina.akter@example.com", phone: "01866221133",
+    street: "House 18, Block C, Mirpur 10", city: "Dhaka", postalCode: "1216", zone: "inside_dhaka" },
+  { name: "Shahriar Kabir", email: "shahriar.kabir@example.com", phone: "01977445566",
+    street: "Kanchpur, Sonargaon", city: "Narayanganj", postalCode: "1440", zone: "suburbs" },
+  // ── Guest stubs: ordered without ever registering ────────────────────────
+  { name: "Rakib Hossain", phone: "01988223311", guest: true,
+    street: "Ward 5, College Road", city: "Narayanganj", postalCode: "1400", zone: "suburbs" },
+  { name: "Sumaiya Rahman", phone: "01633447722", guest: true,
+    street: "Modhupur Bazar Road", city: "Tangail", postalCode: "1900", zone: "outside_dhaka" },
+  { name: "Jubayer Alam", email: "jubayer.alam@example.com", phone: "01511668844", guest: true,
+    street: "House 27, Road 5, Nikunja 2", city: "Dhaka", postalCode: "1229", zone: "inside_dhaka" },
+  { name: "Anika Tabassum", phone: "01744556611", guest: true,
+    street: "Station Road, Kushtia Sadar", city: "Kushtia", postalCode: "7000", zone: "outside_dhaka" },
+];
 
 async function main() {
   await mongoose.connect(MONGODB_URI);
@@ -62,13 +106,21 @@ async function main() {
   const { default: FlashSale } = await import("../models/FlashSale.js");
   const { default: Discount } = await import("../models/Discount.js");
   const { default: User } = await import("../models/User.js");
+  const { default: Order } = await import("../models/Order.js");
+  const { default: Notification } = await import("../models/Notification.js");
 
   if (RESET) {
-    for (const M of [Category, Product, Settings, SizeChart, FlashSale, Discount]) {
+    for (const M of [Category, Product, Settings, SizeChart, FlashSale, Discount, Order, Notification]) {
       await M.deleteMany({});
     }
-    await User.deleteMany({ email: { $in: ["admin@orvo.com", "customer@orvo.com"] } });
-    console.log("reset: catalogue collections cleared");
+    // Only the accounts this script owns — a dev's own staff logins survive.
+    await User.deleteMany({
+      $or: [
+        { email: { $in: ["admin@orvo.com", "customer@orvo.com", ...PEOPLE.filter((p) => p.email).map((p) => p.email)] } },
+        { phone: { $in: PEOPLE.map((p) => p.phone) } },
+      ],
+    });
+    console.log("reset: catalogue, orders and seeded accounts cleared");
   }
 
   // ── Size charts ───────────────────────────────────────────────────────────
@@ -319,7 +371,7 @@ async function main() {
     const doc = await Product.create({
       ...p,
       isPublished: true,
-      variants: p.variants.map((v) => ({ ...v, sku: `${p.skuBase}-${v.size}` })),
+      variants: p.variants.map((v) => ({ ...v, sku: buildVariantSku(SKU_CFG, p.skuBase, v.size) })),
     });
     created.push(doc);
   }
@@ -348,12 +400,14 @@ async function main() {
       text: "",
       link: "",
     },
-    sku: {
-      enabled: true, codeSource: "prefix", prefix: "ORV", separator: "-",
-      padding: 4, appendSize: true, appendToSlug: false, nextNumber: 17,
-    },
+    sku: { ...SKU_CFG, nextNumber: 17 },
     shipping: {
-      freeShippingEnabled: true, freeShippingThreshold: 1500,
+      // Zone fees apply below the threshold; above it delivery is free and the
+      // automatic discount records why. Three things state this number and must
+      // agree: here, siteInfo.freeShippingThreshold, and the hardcoded promise
+      // strip in components/layout/TopStrip.js. Keep freeShippingEnabled off —
+      // on, it frees *every* order and the zones stop mattering.
+      freeShippingEnabled: false, freeShippingThreshold: 1500,
       insideDhaka: 60, suburbs: 100, outsideDhaka: 130,
     },
     heroBanners: [
@@ -427,7 +481,7 @@ async function main() {
   console.log("flash sale: written");
 
   // ── Discount ──────────────────────────────────────────────────────────────
-  await Discount.create({
+  const welcomeDiscount = await Discount.create({
     title: "Welcome 10%",
     description: "10% off any order over Tk 1,500.",
     method: "code",
@@ -442,11 +496,11 @@ async function main() {
     endsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     active: true,
   });
-  await Discount.create({
-    title: "Free delivery over Tk 3,000",
+  const freeShipDiscount = await Discount.create({
+    title: "Free delivery over Tk 1,500",
     method: "automatic",
     type: "free_shipping",
-    minSubtotal: 3000,
+    minSubtotal: 1500,
     priority: 10,
     allowStacking: true,
     active: true,
@@ -456,16 +510,379 @@ async function main() {
   // ── Accounts ──────────────────────────────────────────────────────────────
   const pass = await bcrypt.hash("Orvo!2026", 10);
   await User.deleteMany({ email: { $in: ["admin@orvo.com", "customer@orvo.com"] } });
-  await User.create({
+  const admin = await User.create({
     name: "Orvo Admin", email: "admin@orvo.com", password: pass,
     role: "superadmin", emailVerified: true, phone: "01711223344",
   });
-  await User.create({
+  const testCustomer = await User.create({
     name: "Test Customer", email: "customer@orvo.com", password: pass,
     role: "customer", emailVerified: true, phone: "01799887766",
     address: { street: "House 9, Road 4, Dhanmondi", city: "Dhaka", postalCode: "1205" },
   });
   console.log("accounts: admin@orvo.com / customer@orvo.com  (password: Orvo!2026)");
+
+  // ── Customers ─────────────────────────────────────────────────────────────
+  // A mix of real accounts and guest stubs — the kind lib/customer-link.js
+  // creates when an order arrives from someone who never signed up — so the
+  // customers table, the guest-claim flow and the new-vs-returning split in
+  // analytics all have something to work on.
+  const custPass = await bcrypt.hash("Orvo!2026", 10);
+  const people = [];
+  for (const p of PEOPLE) {
+    const doc = await User.create({
+      name: p.name,
+      role: "customer",
+      phone: p.phone,
+      address: { street: p.street, city: p.city, postalCode: p.postalCode },
+      ...(p.guest
+        ? { isGuest: true, guestSource: "pos", ...(p.email ? { email: p.email } : {}) }
+        : { email: p.email, password: custPass, emailVerified: true }),
+    });
+    people.push({ ...p, doc });
+  }
+  // The signed-in test account buys too, so /account/orders is not empty.
+  people.unshift({
+    name: "Test Customer", email: "customer@orvo.com", phone: "01799887766",
+    street: "House 9, Road 4, Dhanmondi", city: "Dhaka", postalCode: "1205",
+    zone: "inside_dhaka", doc: testCustomer,
+  });
+  console.log("customers:", people.length, `(${people.filter((p) => p.guest).length} guest stubs)`);
+
+  // ── Orders ────────────────────────────────────────────────────────────────
+  // Four months of trading, generated from a fixed seed so every run produces
+  // the same numbers and one dashboard screenshot stays comparable to the next.
+  // The spread is deliberate: every order status, sales channel, payment method
+  // and shipping zone appears, alongside discounted orders, returns,
+  // cancellations and courier consignments, so no admin screen comes up empty.
+  let _s = 20260831;
+  const rnd = () => ((_s = (_s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  const chance = (p) => rnd() < p;
+  const int = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
+  const money = (n) => Math.round(n);
+  const hex = (n) =>
+    Array.from({ length: n }, () => "0123456789ABCDEF"[int(0, 15)]).join("");
+
+  const DAY = 86400000;
+  const now = Date.now();
+  const SHIP = { inside_dhaka: 60, suburbs: 100, outside_dhaka: 130 };
+  const FREE_OVER = 1500; // matches the automatic free-delivery discount above
+
+  // Courier history per phone, so a repeat buyer shows the same record on every
+  // one of their orders (that is how the real Steadfast lookup behaves).
+  for (const p of people) {
+    const delivered = int(2, 40);
+    const cancelled = int(0, Math.max(1, Math.round(delivered * 0.35)));
+    const total = delivered + cancelled;
+    p.fraud = {
+      status: "done",
+      delivered,
+      cancelled,
+      frauds: chance(0.12) ? int(1, 3) : 0,
+      totalParcels: total,
+      successRate: Math.round((delivered / total) * 100),
+      autoProcessed: false,
+      checkedAt: null,
+      error: "",
+    };
+  }
+
+  const sellable = created.filter((p) => p.variants.length);
+  const lineOf = (product, variant, quantity) => ({
+    product: product._id,
+    name: product.name,
+    image: product.images[0],
+    sku: variant.sku,
+    size: variant.size,
+    price: variant.price,
+    quantity,
+  });
+
+  // The storefront carries most of the volume; social and phone make up the rest.
+  const CHANNELS = [
+    ...Array(11).fill("website"), ...Array(3).fill("facebook"),
+    ...Array(2).fill("instagram"), "whatsapp", "phone", "offline",
+  ];
+
+  const drafts = [];
+  for (let i = 0; i < 68; i++) {
+    // Recency-weighted: busier in the last few weeks than four months back.
+    const daysAgo = Math.floor(118 * Math.pow(rnd(), 1.7));
+    const at = new Date(
+      now - daysAgo * DAY - int(9, 22) * 3600000 - int(0, 59) * 60000
+    );
+    // Same curve over the customer list, so the people at the top of it become
+    // the repeat buyers.
+    const person = people[Math.floor(Math.pow(rnd(), 1.8) * people.length)];
+
+    const items = [];
+    const seen = new Set();
+    for (let k = 0, n = chance(0.5) ? 1 : chance(0.65) ? 2 : 3; k < n; k++) {
+      const prod = pick(sellable);
+      if (seen.has(prod.slug)) continue;
+      seen.add(prod.slug);
+      items.push(lineOf(prod, pick(prod.variants), chance(0.16) ? 2 : 1));
+    }
+    if (!items.length) items.push(lineOf(sellable[0], sellable[0].variants[0], 1));
+
+    const subtotal = items.reduce((s, it) => s + it.price * it.quantity, 0);
+    const freeShip = subtotal >= FREE_OVER;
+    const shippingFee = freeShip ? 0 : SHIP[person.zone];
+
+    let discount = 0;
+    const discountCodes = [];
+    const appliedDiscounts = [];
+    if (subtotal >= 1500 && chance(0.26)) {
+      discount = Math.min(money(subtotal * 0.1), 800);
+      discountCodes.push("ORVO10");
+      appliedDiscounts.push({
+        discount: welcomeDiscount._id, code: "ORVO10", title: "Welcome 10%",
+        type: "percentage", amount: discount,
+      });
+    }
+    if (freeShip) {
+      appliedDiscounts.push({
+        discount: freeShipDiscount._id, title: "Free delivery over Tk 1,500",
+        type: "free_shipping", amount: 0, freeShipping: true,
+      });
+    }
+    const totalAmount = money(subtotal - discount + shippingFee);
+
+    // Older orders have finished their journey; recent ones are still moving.
+    let orderStatus;
+    if (daysAgo > 12) orderStatus = chance(0.88) ? "delivered" : "cancelled";
+    else if (daysAgo > 6)
+      orderStatus = chance(0.62) ? "delivered" : chance(0.55) ? "shipped" : "cancelled";
+    else if (daysAgo > 2) orderStatus = pick(["shipped", "shipped", "delivered", "processing"]);
+    else orderStatus = pick(["pending", "pending", "processing", "shipped"]);
+
+    const source = pick(CHANNELS);
+    const manual = source !== "website";
+    const paymentMethod =
+      source === "offline" ? "cash"
+      : source === "website" ? pick(["cod", "cod", "cod", "sslcommerz", "sslcommerz", "bkash"])
+      : pick(["cod", "cod", "bkash", "nagad", "bank"]);
+    const prepaid = ["sslcommerz", "bkash", "nagad", "bank"].includes(paymentMethod);
+
+    let paymentStatus;
+    if (orderStatus === "delivered") paymentStatus = "paid";
+    else if (orderStatus === "cancelled")
+      paymentStatus = paymentMethod === "sslcommerz" && chance(0.4) ? "failed" : "pending";
+    else if (prepaid) paymentStatus = chance(0.85) ? "paid" : "pending";
+    else paymentStatus = "pending";
+
+    const shipped = orderStatus === "shipped" || orderStatus === "delivered";
+    const sentAt = shipped ? new Date(at.getTime() + DAY * (0.5 + rnd())) : null;
+    const deliveredAt = shipped ? new Date(sentAt.getTime() + DAY * (1 + rnd() * 2)) : null;
+
+    const courier = shipped
+      ? {
+          provider: "steadfast",
+          consignmentId: 4210000 + i * 37 + int(1, 30),
+          trackingCode: hex(8),
+          status: orderStatus === "delivered" ? "delivered" : "in_review",
+          deliveryCharge: shippingFee || SHIP[person.zone],
+          sentAt,
+          lastWebhookAt: orderStatus === "delivered" ? deliveredAt : sentAt,
+          error: "",
+          trackingMessages: [
+            { message: "Consignment created", at: sentAt },
+            { message: "Picked up from merchant", at: new Date(sentAt.getTime() + 6 * 3600000) },
+            ...(orderStatus === "delivered"
+              ? [{ message: "Delivered to customer", at: deliveredAt }]
+              : [{ message: "Out for delivery", at: new Date(sentAt.getTime() + DAY) }]),
+          ],
+        }
+      : {};
+
+    const editHistory = [];
+    if (manual) {
+      editHistory.push({
+        at, by: admin._id, byName: "Orvo Admin", action: "edit",
+        summary: `Order keyed in from ${source}`, pinVerified: true,
+      });
+    }
+    if (shipped) {
+      editHistory.push({
+        at: sentAt, by: admin._id, byName: "Orvo Admin", action: "status_change",
+        summary: "Status: processing → shipped", pinVerified: true,
+      });
+    }
+    if (orderStatus === "delivered") {
+      editHistory.push({
+        at: deliveredAt, by: null, byName: "Steadfast webhook", action: "status_change",
+        summary: "Status: shipped → delivered", pinVerified: false,
+      });
+    }
+    if (orderStatus === "cancelled") {
+      editHistory.push({
+        at: new Date(at.getTime() + DAY * (1 + rnd())), by: admin._id, byName: "Orvo Admin",
+        action: "status_change",
+        summary: pick([
+          "Cancelled — customer unreachable after three calls",
+          "Cancelled — customer changed their mind",
+          "Cancelled — courier returned, address not found",
+        ]),
+        pinVerified: true,
+      });
+    }
+
+    drafts.push({
+      at,
+      doc: {
+        user: person.doc._id,
+        items,
+        shippingAddress: {
+          name: person.name, phone: person.phone, email: person.email,
+          street: person.street, city: person.city, postalCode: person.postalCode,
+          country: "Bangladesh",
+        },
+        source,
+        createdBy: manual ? admin._id : null,
+        createdByName: manual ? "Orvo Admin" : "",
+        paymentMethod, paymentStatus, orderStatus,
+        shippingZone: person.zone,
+        subtotal, shippingFee, discount, discountCodes, appliedDiscounts, totalAmount,
+        ...(paymentStatus === "paid" && prepaid ? { transactionId: `TXN${hex(10)}` } : {}),
+        notes: chance(0.15) ? pick([
+          "Please call before delivery.",
+          "Deliver after 5pm — office address.",
+          "Gift wrap requested.",
+          "Customer asked to swap size if it does not fit.",
+        ]) : "",
+        courier,
+        fraudCheck: { ...person.fraud, checkedAt: new Date(at.getTime() + 90000) },
+        editHistory,
+        createdAt: at,
+        updatedAt: deliveredAt || sentAt || at,
+      },
+    });
+  }
+
+  // A failed gateway payment is the usual reason an order dies before it ships,
+  // and the "failed" filter needs stock. Forced rather than left to chance: with
+  // only a handful of cancelled orders it can otherwise come up empty.
+  for (const d of drafts.filter((x) => x.doc.orderStatus === "cancelled").slice(0, 2)) {
+    d.doc.paymentMethod = "sslcommerz";
+    d.doc.paymentStatus = "failed";
+    delete d.doc.transactionId;
+    d.doc.editHistory.unshift({
+      at: new Date(d.at.getTime() + 300000), by: null, byName: "SSLCommerz",
+      action: "payment_update", summary: "Payment failed — gateway declined the card",
+      pinVerified: false,
+    });
+  }
+
+  // Number them in the order they were placed, the way the counter would have.
+  drafts.sort((a, b) => a.at - b.at);
+  const year = new Date().getFullYear();
+  const orderDocs = drafts.map((d, idx) => ({
+    ...d.doc,
+    orderNumber: `ORV-${year}-${String(idx + 1).padStart(5, "0")}`,
+  }));
+
+  // ── Returns ───────────────────────────────────────────────────────────────
+  // Recomputed exactly the way app/api/admin/orders/[id]/return does it, so the
+  // returns report and the order totals agree with what the app would write.
+  const returnable = orderDocs.filter(
+    (o) => o.orderStatus === "delivered" && o.items.reduce((s, i) => s + i.quantity, 0) > 1
+  );
+  for (const o of returnable.slice(0, 5)) {
+    const line = o.items[o.items.length - 1];
+    line.returnedQuantity = 1;
+    const waived = chance(0.5);
+    const kept = o.items.reduce((s, i) => s + (i.quantity - (i.returnedQuantity || 0)) * i.price, 0);
+    const effectiveDiscount = o.subtotal > 0 ? money(o.discount * (kept / o.subtotal)) : 0;
+    const newTotal = Math.max(0, money(kept - effectiveDiscount + (waived ? 0 : o.shippingFee)));
+    const refund = Math.max(0, money(o.totalAmount - newTotal));
+    const returnedAt = new Date(o.updatedAt.getTime() + DAY * (1 + rnd() * 3));
+    o.returnedAmount = refund;
+    o.deliveryChargeWaived = waived;
+    o.totalAmount = newTotal;
+    o.returns = [{
+      at: returnedAt, by: "Orvo Admin",
+      items: [{ name: line.name, size: line.size, quantity: 1, price: line.price }],
+      refundAmount: refund, deliveryChargeWaived: waived,
+      note: pick(["Size too small, returned on delivery.", "Customer kept one of two.", "Colour not as expected."]),
+    }];
+    o.editHistory.push({
+      at: returnedAt, by: admin._id, byName: "Orvo Admin", action: "return",
+      summary: `Returned 1 × ${line.name} (${line.size}) — refund ৳${refund}`,
+      pinVerified: true,
+    });
+    o.updatedAt = returnedAt;
+  }
+
+  const insertedOrders = await Order.insertMany(orderDocs, { timestamps: false });
+  const byStatus = insertedOrders.reduce((m, o) => ({ ...m, [o.orderStatus]: (m[o.orderStatus] || 0) + 1 }), {});
+  console.log("orders:", insertedOrders.length, byStatus);
+
+  // ── Notifications ─────────────────────────────────────────────────────────
+  // Enough rows for the bell, the unread badge and the notifications list.
+  const EVERYONE = ["superadmin", "admin", "moderator", "staff"];
+  const ELEVATED = ["superadmin", "admin"];
+  const recent = [...insertedOrders].sort((a, b) => b.createdAt - a.createdAt).slice(0, 12);
+  const notifications = [];
+  for (const o of recent) {
+    const manual = o.source !== "website";
+    notifications.push({
+      roles: EVERYONE,
+      type: manual ? "order_new_pos" : "order_new",
+      severity: "info",
+      title: manual
+        ? `New ${o.source} order ${o.orderNumber}`
+        : `New website order ${o.orderNumber}`,
+      body: `${o.shippingAddress.name} — ৳${o.totalAmount} (${o.items.length} item${o.items.length === 1 ? "" : "s"}).`,
+      link: `/admin/orders/${o._id}`,
+      order: o._id,
+      ...(manual ? { actor: admin._id, actorName: "Orvo Admin" } : {}),
+      createdAt: o.createdAt,
+      updatedAt: o.createdAt,
+    });
+  }
+  for (const o of recent.filter((o) => o.orderStatus === "cancelled").slice(0, 2)) {
+    notifications.push({
+      roles: EVERYONE, type: "order_cancelled", severity: "warning",
+      title: `Order ${o.orderNumber} cancelled`,
+      body: `৳${o.totalAmount} cancelled by Orvo Admin.`,
+      link: `/admin/orders/${o._id}`, order: o._id,
+      actor: admin._id, actorName: "Orvo Admin",
+      createdAt: new Date(o.createdAt.getTime() + DAY), updatedAt: new Date(o.createdAt.getTime() + DAY),
+    });
+  }
+  const returned = insertedOrders.filter((o) => (o.returnedAmount || 0) > 0).slice(0, 2);
+  for (const o of returned) {
+    notifications.push({
+      roles: ELEVATED, type: "order_returned", severity: "warning",
+      title: `Return on ${o.orderNumber}`,
+      body: `Refund ৳${o.returnedAmount} recorded by Orvo Admin.`,
+      link: `/admin/orders/${o._id}`, order: o._id,
+      actor: admin._id, actorName: "Orvo Admin",
+      createdAt: o.updatedAt, updatedAt: o.updatedAt,
+    });
+  }
+  notifications.push({
+    roles: ELEVATED, type: "system", severity: "warning",
+    title: "Low stock on 4 variants",
+    body: "Field Oxford Shirt (L), Heavy Pocket Tee (XL), Six-Panel Cap (One Size) and Kids Zip Hoodie (L) are out of stock.",
+    link: "/admin/products",
+    createdAt: new Date(now - 3 * 3600000), updatedAt: new Date(now - 3 * 3600000),
+  });
+  notifications.push({
+    roles: EVERYONE, type: "system", severity: "info",
+    title: "Flash sale is live",
+    body: "The 48-hour drop started six hours ago. Two of the four allocations are nearly claimed.",
+    link: "/admin/flash-sales",
+    createdAt: new Date(now - 6 * 3600000), updatedAt: new Date(now - 6 * 3600000),
+  });
+  await Notification.insertMany(notifications, { timestamps: false });
+  console.log("notifications:", notifications.length);
+
+  // ── Summary ───────────────────────────────────────────────────────────────
+  const revenue = insertedOrders
+    .filter((o) => o.paymentStatus === "paid")
+    .reduce((s, o) => s + o.totalAmount, 0);
+  console.log(`revenue (paid): Tk ${revenue.toLocaleString()}`);
 
   await mongoose.disconnect();
   console.log("done");

@@ -115,21 +115,30 @@ export default function Footer() {
                   Subscribed — see you Thursday
                 </p>
               ) : (
-                <form onSubmit={subscribe} className="mt-6 flex items-center gap-2 max-w-[420px]">
+                <form
+                  onSubmit={subscribe}
+                  className="mt-6 flex max-w-[420px] flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-2"
+                >
                   <input
                     type="email"
                     required
+                    inputMode="email"
+                    autoComplete="email"
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     placeholder="your@email.com"
-                    className="input-dark flex-1"
+                    className="input-dark sm:flex-1"
                   />
+                  {/* Same reasoning as the newsletter block: a 56px icon button
+                      beside the field leaves a phone about 200px to type an
+                      address into. On a narrow screen it becomes a real button
+                      on its own line. */}
                   <button
                     type="submit"
                     disabled={busy}
-                    aria-label="Subscribe"
-                    className="w-14 h-[54px] shrink-0 rounded-2xl bg-beam text-ink flex items-center justify-center hover:bg-beam-dark transition-colors disabled:opacity-50"
+                    className="btn-base h-[54px] w-full shrink-0 bg-beam text-ink hover:bg-beam-dark disabled:opacity-50 sm:w-14 sm:px-0"
                   >
+                    <span className="sm:hidden">{busy ? "Joining…" : "Join the list"}</span>
                     <ArrowRight size={19} strokeWidth={2.2} />
                   </button>
                 </form>
@@ -196,7 +205,7 @@ export default function Footer() {
           </div>
 
           {/* ── Legal ──────────────────────────────────────────────────────── */}
-          <div className="mt-12 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-6 sm:flex-row md:mt-12">
             <p className="text-[13px] text-white/30 order-2 sm:order-1">
               © {new Date().getFullYear()} {siteName}. All rights reserved.
             </p>

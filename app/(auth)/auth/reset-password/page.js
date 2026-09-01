@@ -65,7 +65,7 @@ function ResetPasswordForm() {
 
   return (
     <AuthShell aside={{ label: "Sign in", href: "/auth/login" }}>
-      <AuthHeading eyebrow="Almost there" title="Set a new password">
+      <AuthHeading title="Set a new password">
         Make it at least six characters.
       </AuthHeading>
 

@@ -8,27 +8,29 @@ import { useCart } from "@/context/CartContext";
 import { formatPrice, shouldUnoptimizeImage } from "@/lib/utils";
 
 export default function CartDrawer() {
-  const { items, isDrawerOpen, closeDrawer, removeItem, updateQuantity, subtotal } = useCart();
+  const { items, isDrawerOpen, closeDrawer, removeItem, updateQuantity, subtotal, itemCount } = useCart();
 
   useEffect(() => {
     document.body.style.overflow = isDrawerOpen ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [isDrawerOpen]);
 
-  const unitCount = items.reduce((n, i) => n + i.quantity, 0);
+  // itemCount already leaves out anything checkout has flagged as sold out, so
+  // the badge never counts a line that is not being sold.
+  const unitCount = itemCount;
 
   return (
     <>
       <div
         onClick={closeDrawer}
-        className={`fixed inset-0 z-[65] bg-ink/40 backdrop-blur-sm transition-opacity duration-300 ${
+        className={`fixed inset-0 z-[65] bg-ink/40 backdrop-blur-sm transition-opacity duration-slow ease-swift ${
           isDrawerOpen ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       />
 
       <aside
         aria-hidden={!isDrawerOpen}
-        className={`fixed inset-y-3 right-3 z-[75] w-[92%] max-w-[440px] rounded-4xl bg-paper-pure shadow-pop flex flex-col overflow-hidden transform transition-transform duration-300 ease-out ${
+        className={`fixed inset-y-3 right-3 z-[75] flex w-[92%] max-w-[440px] flex-col overflow-hidden rounded-4xl bg-paper-pure shadow-pop transition-transform duration-slow ease-soft ${
           isDrawerOpen ? "translate-x-0" : "translate-x-[calc(100%+1rem)]"
         }`}
       >
@@ -105,28 +107,37 @@ export default function CartDrawer() {
                     <p className="text-[13px] text-smoke mt-0.5">Size {item.size}</p>
 
                     <div className="flex items-center justify-between mt-auto pt-2.5">
-                      <div className="flex items-center rounded-full bg-paper-pure">
-                        <button
-                          onClick={() => updateQuantity(item.productId, item.size, item.quantity - 1)}
-                          aria-label="Decrease quantity"
-                          className="w-8 h-8 rounded-l-full flex items-center justify-center text-ink hover:bg-haze transition-colors"
-                        >
-                          <Minus size={12} strokeWidth={2.4} />
-                        </button>
-                        <span className="w-7 text-center text-[13.5px] font-semibold tabular-nums">
-                          {item.quantity}
+                      {item.unavailable ? (
+                        <span className="inline-flex items-center rounded-full bg-signal-soft px-2.5 py-1 text-[12px] font-semibold text-signal">
+                          Sold out
                         </span>
-                        <button
-                          onClick={() => updateQuantity(item.productId, item.size, item.quantity + 1)}
-                          aria-label="Increase quantity"
-                          className="w-8 h-8 rounded-r-full flex items-center justify-center text-ink hover:bg-haze transition-colors"
-                        >
-                          <Plus size={12} strokeWidth={2.4} />
-                        </button>
-                      </div>
-                      <span className="text-[15.5px] font-bold text-ink tabular-nums tracking-[-0.02em]">
-                        {formatPrice(item.price * item.quantity)}
-                      </span>
+                      ) : (
+                        <>
+                          <div className="flex items-center rounded-full bg-paper-pure">
+                            <button
+                              onClick={() => updateQuantity(item.productId, item.size, item.quantity - 1)}
+                              aria-label="Decrease quantity"
+                              className="w-8 h-8 rounded-l-full flex items-center justify-center text-ink hover:bg-haze transition-colors"
+                            >
+                              <Minus size={12} strokeWidth={2.4} />
+                            </button>
+                            <span className="w-7 text-center text-[13.5px] font-semibold tabular-nums">
+                              {item.quantity}
+                            </span>
+                            <button
+                              onClick={() => updateQuantity(item.productId, item.size, item.quantity + 1)}
+                              disabled={typeof item.maxStock === "number" && item.quantity >= item.maxStock}
+                              aria-label="Increase quantity"
+                              className="w-8 h-8 rounded-r-full flex items-center justify-center text-ink hover:bg-haze transition-colors disabled:text-smoke-light disabled:hover:bg-transparent"
+                            >
+                              <Plus size={12} strokeWidth={2.4} />
+                            </button>
+                          </div>
+                          <span className="text-[15.5px] font-bold text-ink tabular-nums tracking-[-0.02em]">
+                            {formatPrice(item.price * item.quantity)}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </li>
@@ -151,7 +162,7 @@ export default function CartDrawer() {
                 <ArrowUpRight
                   size={17}
                   strokeWidth={2.4}
-                  className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+                  className="transition-transform duration-base ease-swift group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
                 />
               </Link>
               <Link

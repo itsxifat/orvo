@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import Wordmark from "@/components/brand/Wordmark";
+import AuthBackdrop from "@/components/auth/AuthBackdrop";
 
 // The frame every auth screen sits in.
 //
 // Deliberately not a card on a backdrop: the page itself is the composition.
-// The form sits straight on the ground with no container of its own, and the
-// space around it does the design work — a fine dot field that fades away
-// behind the content, two soft colour washes bleeding in from the corners, and
-// the mark and legal type pinned to the top and bottom edges of the viewport.
+// The form sits straight on the ground with no container of its own, the woven
+// ground in AuthBackdrop does the design work around it, and the mark and legal
+// type are pinned to the top and bottom edges of the viewport.
 //
 //   aside     top-right link, e.g. { label: "Create account", href: "/auth/register" }
 //   wide      widen the content column for longer forms
@@ -19,30 +19,7 @@ export default function AuthShell({ aside, children, wide = false }) {
   return (
     <div className="relative min-h-screen flex flex-col bg-paper overflow-hidden">
 
-      {/* Colour washes — off-canvas so only the soft edge of each one lands */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -top-52 -left-44 w-[640px] h-[640px] rounded-full bg-beam/20 blur-[130px]"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -bottom-52 -right-40 w-[600px] h-[600px] rounded-full bg-signal/[0.14] blur-[130px]"
-      />
-
-      {/* Dot field, masked out behind the form so it never competes with it */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle, rgba(15,15,17,0.09) 1px, transparent 1px)",
-          backgroundSize: "24px 24px",
-          WebkitMaskImage:
-            "radial-gradient(ellipse 46% 44% at 50% 48%, transparent 34%, #000 100%)",
-          maskImage:
-            "radial-gradient(ellipse 46% 44% at 50% 48%, transparent 34%, #000 100%)",
-        }}
-      />
+      <AuthBackdrop tone="light" />
 
       {/* ── Top edge ────────────────────────────────────────────────────────*/}
       <header className="relative z-10 container-custom py-6 sm:py-7 flex items-center justify-between gap-4">

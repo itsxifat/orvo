@@ -28,7 +28,7 @@ function NavLink({ item, isOpen, onOpen, onClose }) {
     <div className="relative" onMouseEnter={() => (hasChildren ? onOpen(item._id) : onClose())}>
       <Link
         href={item.href}
-        className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-[14.5px] font-medium tracking-[-0.01em] whitespace-nowrap transition-colors duration-200 ${
+        className={`flex items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-[14.5px] font-medium tracking-[-0.01em] transition-colors duration-fast ease-swift ${
           item.highlighted
             ? "text-signal hover:bg-signal-soft"
             : isOpen
@@ -41,7 +41,7 @@ function NavLink({ item, isOpen, onOpen, onClose }) {
           <ChevronDown
             size={14}
             strokeWidth={2.2}
-            className={`transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+            className={`transition-transform duration-base ease-settle ${isOpen ? "rotate-180" : ""}`}
           />
         )}
       </Link>
@@ -54,7 +54,7 @@ function MegaPanel({ item, onClose }) {
 
   return (
     <div
-      className="hidden lg:block absolute left-0 right-0 top-full pt-3 animate-fade-in"
+      className="absolute left-0 right-0 top-full hidden animate-reveal pt-3 lg:block"
       onMouseLeave={onClose}
     >
       <div className="container-custom">
@@ -146,7 +146,7 @@ function MobileNavItem({ item, onClose }) {
           {item.label}
         </span>
         <span
-          className={`w-8 h-8 rounded-full bg-haze flex items-center justify-center text-ink transition-transform duration-200 ${
+          className={`flex h-8 w-8 items-center justify-center rounded-full bg-haze text-ink transition-transform duration-base ease-settle ${
             open ? "rotate-180" : ""
           }`}
         >
@@ -155,7 +155,7 @@ function MobileNavItem({ item, onClose }) {
       </button>
 
       {open && (
-        <div className="pb-2 pl-4 animate-fade-in">
+        <div className="animate-reveal pb-2 pl-4">
           <Link
             href={item.href}
             onClick={onClose}
@@ -255,9 +255,9 @@ function SearchOverlay({ open, onClose }) {
   const q = query.trim();
 
   return (
-    <div className="fixed inset-0 z-[80] bg-ink/40 backdrop-blur-md animate-fade-in overflow-y-auto">
-      <div className="container-custom py-5 md:py-8">
-        <div className="rounded-4xl bg-paper-pure shadow-pop overflow-hidden">
+    <div className="fixed inset-0 z-[80] animate-fade-in overflow-y-auto bg-ink/40 backdrop-blur-md">
+      <div className="container-custom py-4 md:py-8">
+        <div className="animate-reveal overflow-hidden rounded-4xl bg-paper-pure shadow-pop">
           <form onSubmit={submit} className="flex items-center gap-4 px-6 md:px-8 py-5 border-b border-haze-dark">
             <Search size={22} strokeWidth={2} className="text-smoke shrink-0" />
             <input
@@ -420,12 +420,12 @@ export default function Navbar() {
   const showStrip = announcement.enabled;
 
   const iconBtn =
-    "w-10 h-10 rounded-full flex items-center justify-center text-ink hover:bg-haze transition-colors";
+    "press flex h-10 w-10 items-center justify-center rounded-full text-ink transition-colors duration-fast ease-swift hover:bg-haze";
 
   return (
     <>
       <header
-        className={`fixed top-0 left-0 right-0 z-40 transition-transform duration-300 ease-out ${
+        className={`fixed left-0 right-0 top-0 z-40 transition-transform duration-slow ease-soft ${
           showStrip && stripUp ? "-translate-y-12" : "translate-y-0"
         }`}
         onMouseLeave={closeMenu}
@@ -433,9 +433,9 @@ export default function Navbar() {
         {showStrip && <TopStrip text={announcement.text} link={announcement.link} />}
 
         <div
-          className={`relative transition-all duration-300 ${
+          className={`relative transition-[background-color,box-shadow,backdrop-filter] duration-slow ease-swift ${
             scrolled
-              ? "bg-paper/85 backdrop-blur-xl shadow-soft"
+              ? "bg-paper/85 shadow-soft backdrop-blur-xl"
               : "bg-paper/60 backdrop-blur-md"
           }`}
         >
@@ -494,7 +494,7 @@ export default function Navbar() {
                   </button>
 
                   {accountOpen && (
-                    <div className="absolute right-0 top-full mt-3 w-72 rounded-3xl bg-paper-pure shadow-pop overflow-hidden z-50 animate-fade-in">
+                    <div className="absolute right-0 top-full z-50 mt-3 w-72 origin-top-right animate-pop overflow-hidden rounded-3xl bg-paper-pure shadow-pop">
                       {session ? (
                         <>
                           <div className="px-5 py-4 bg-haze">
@@ -562,10 +562,13 @@ export default function Navbar() {
                 <button
                   onClick={openDrawer}
                   aria-label="Cart"
-                  className="relative ml-1 h-10 pl-4 pr-4 rounded-full bg-ink text-paper-pure flex items-center gap-2 hover:bg-ink-soft transition-colors"
+                  className="press relative ml-1 flex h-10 items-center gap-2 rounded-full bg-ink px-4 text-paper-pure transition-colors duration-fast ease-swift hover:bg-ink-soft"
                 >
                   <ShoppingBag size={17} strokeWidth={2} />
-                  <span className="text-[14px] font-semibold tabular-nums leading-none">
+                  <span
+                    key={itemCount}
+                    className="animate-pop text-[14px] font-semibold leading-none tabular-nums"
+                  >
                     {itemCount > 99 ? "99+" : itemCount}
                   </span>
                   {itemCount > 0 && (
@@ -586,15 +589,16 @@ export default function Navbar() {
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {/* ── Mobile drawer ─────────────────────────────────────────────────── */}
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-[60] bg-ink/40 backdrop-blur-sm lg:hidden animate-fade-in"
-          onClick={closeMobile}
-        />
-      )}
+      <div
+        aria-hidden={!mobileOpen}
+        onClick={closeMobile}
+        className={`fixed inset-0 z-[60] bg-ink/40 backdrop-blur-sm transition-opacity duration-slow ease-swift lg:hidden ${
+          mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+      />
 
       <div
-        className={`fixed inset-y-3 right-3 z-[70] w-[88%] max-w-[380px] rounded-4xl bg-paper-pure shadow-pop lg:hidden flex flex-col overflow-hidden transform transition-transform duration-300 ease-out ${
+        className={`fixed inset-y-3 right-3 z-[70] flex w-[88%] max-w-[380px] flex-col overflow-hidden rounded-4xl bg-paper-pure shadow-pop transition-transform duration-slow ease-soft lg:hidden ${
           mobileOpen ? "translate-x-0" : "translate-x-[calc(100%+1rem)]"
         }`}
       >
@@ -609,8 +613,17 @@ export default function Navbar() {
 
         <div className="flex-1 overflow-y-auto px-3 pb-8">
           <nav>
-            {navItems.map((item) => (
-              <MobileNavItem key={item._id} item={item} onClose={closeMobile} />
+            {navItems.map((item, i) => (
+              <div
+                key={item._id}
+                // Only while the drawer is open: an element that keeps a
+                // finished `animation` on it cannot be animated again, and the
+                // second opening would land with no motion at all.
+                className={mobileOpen ? "animate-reveal" : "opacity-0"}
+                style={mobileOpen ? { animationDelay: `${120 + i * 45}ms` } : undefined}
+              >
+                <MobileNavItem item={item} onClose={closeMobile} />
+              </div>
             ))}
           </nav>
 

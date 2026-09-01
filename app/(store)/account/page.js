@@ -2,6 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useForm } from "react-hook-form";
+import { bdPhoneField } from "@/lib/phone-field";
 import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import { Eye, EyeOff, UserCircle, Lock } from "lucide-react";
@@ -16,7 +17,7 @@ export default function AccountPage() {
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
 
-  const { register, handleSubmit, formState: { errors }, reset } = useForm();
+  const { register, handleSubmit, setValue, formState: { errors }, reset } = useForm();
   const { register: pwRegister, handleSubmit: pwSubmit, formState: { errors: pwErrors }, reset: pwReset } = useForm();
 
   useEffect(() => {
@@ -141,7 +142,14 @@ export default function AccountPage() {
 
           <div>
             <label className={labelClass}>Phone</label>
-            <input {...register("phone")} className={inputClass} placeholder="01700000000" />
+            {/* Same tidy-up as checkout: type it in Bangla digits or with the
+                country code and it still lands as 01XXXXXXXXX, which is what
+                links this profile to orders placed as a guest. */}
+            <input
+              {...bdPhoneField(register, setValue, "phone", { format: false })}
+              className={inputClass}
+              placeholder="01700000000"
+            />
           </div>
 
           <div>

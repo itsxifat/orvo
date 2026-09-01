@@ -67,7 +67,7 @@ export default function ForgotPasswordPage() {
         </div>
       ) : (
         <>
-          <AuthHeading eyebrow="Password reset" title="Forgot your password?">
+          <AuthHeading title="Forgot your password?">
             Enter the email you signed up with and we will send you a reset link.
           </AuthHeading>
 

@@ -9,11 +9,13 @@ import Pagination from "@/components/shop/Pagination";
 import Spinner from "@/components/ui/Spinner";
 import { useCustomCampaign } from "@/hooks/useCustomCampaign";
 
+// `short` is what the control shows on a phone. "Price — low to high" next to
+// the Filters button left the two of them fighting over a 390px row.
 const SORT_OPTIONS = [
-  { value: "newest", label: "Newest first" },
-  { value: "featured", label: "Featured" },
-  { value: "price-asc", label: "Price — low to high" },
-  { value: "price-desc", label: "Price — high to low" },
+  { value: "newest", label: "Newest first", short: "Newest" },
+  { value: "featured", label: "Featured", short: "Featured" },
+  { value: "price-asc", label: "Price — low to high", short: "Price ↑" },
+  { value: "price-desc", label: "Price — high to low", short: "Price ↓" },
 ];
 
 const FILTER_KEYS = ["category", "size", "minPrice", "maxPrice", "newArrival", "onSale", "featured"];
@@ -114,24 +116,28 @@ function ShopContent() {
   return (
     <div className="container-custom pb-16">
       {/* ── Masthead ────────────────────────────────────────────────────────*/}
-      <div className="pt-6 pb-8 md:pt-10 md:pb-10">
-        <span className="eyebrow">{searchQuery ? "Search results" : "Catalogue"}</span>
-        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3 mt-4">
-          <h1 className="text-[clamp(2.4rem,6vw,4rem)] font-bold leading-[1] tracking-[-0.04em] text-ink">
+      <div className="pb-6 pt-5 md:pb-10 md:pt-10">
+        {searchQuery && <span className="eyebrow">Search results</span>}
+        <div
+          className={`flex flex-wrap items-end justify-between gap-x-8 gap-y-3 ${
+            searchQuery ? "mt-4" : ""
+          }`}
+        >
+          <h1 className="text-[clamp(2rem,8vw,4rem)] font-bold leading-[1] tracking-[-0.04em] text-ink">
             {title}
           </h1>
-          <p className="text-[15px] text-smoke tabular-nums pb-2">
+          <p className="pb-1.5 text-[14px] tabular-nums text-smoke md:pb-2 md:text-[15px]">
             {loading ? "Loading…" : `${total} item${total === 1 ? "" : "s"}`}
           </p>
         </div>
       </div>
 
       {/* ── Control bar ─────────────────────────────────────────────────────*/}
-      <div className="sticky top-[var(--header-h)] z-30 -mx-1 px-1 py-3 bg-paper/85 backdrop-blur-xl">
+      <div className="sticky top-[var(--header-h)] z-30 -mx-1 bg-paper/85 px-1 py-2.5 backdrop-blur-xl md:py-3">
         <div className="flex items-center justify-between gap-4">
           <button
             onClick={() => setFiltersOpen(true)}
-            className="inline-flex items-center gap-2.5 rounded-full bg-paper-pure shadow-soft px-5 py-3 text-[14.5px] font-semibold text-ink hover:shadow-lift transition-shadow"
+            className="press inline-flex items-center gap-2.5 rounded-full bg-paper-pure px-4 py-2.5 text-[14px] font-semibold text-ink shadow-soft transition-shadow duration-base ease-swift hover:shadow-lift sm:px-5 sm:py-3 sm:text-[14.5px]"
           >
             <SlidersHorizontal size={16} strokeWidth={2.2} />
             Filters
@@ -146,24 +152,25 @@ function ShopContent() {
             <button
               onClick={() => setSortOpen((v) => !v)}
               onBlur={() => setTimeout(() => setSortOpen(false), 150)}
-              className="inline-flex items-center gap-2 rounded-full bg-paper-pure shadow-soft px-5 py-3 text-[14.5px] font-semibold text-ink hover:shadow-lift transition-shadow"
+              className="press inline-flex items-center gap-2 rounded-full bg-paper-pure px-4 py-2.5 text-[14px] font-semibold text-ink shadow-soft transition-shadow duration-base ease-swift hover:shadow-lift sm:px-5 sm:py-3 sm:text-[14.5px]"
             >
-              <span className="hidden sm:inline font-normal text-smoke">Sort</span>
-              {activeSort.label}
+              <span className="hidden font-normal text-smoke sm:inline">Sort</span>
+              <span className="sm:hidden">{activeSort.short}</span>
+              <span className="hidden sm:inline">{activeSort.label}</span>
               <ChevronDown
                 size={15}
                 strokeWidth={2.2}
-                className={`transition-transform ${sortOpen ? "rotate-180" : ""}`}
+                className={`transition-transform duration-base ease-settle ${sortOpen ? "rotate-180" : ""}`}
               />
             </button>
 
             {sortOpen && (
-              <div className="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-paper-pure shadow-pop p-2 z-40 animate-fade-in">
+              <div className="absolute right-0 top-full z-40 mt-2 w-64 origin-top-right animate-pop rounded-2xl bg-paper-pure p-2 shadow-pop">
                 {SORT_OPTIONS.map((o) => (
                   <button
                     key={o.value}
                     onMouseDown={() => setSort(o.value)}
-                    className={`block w-full text-left rounded-xl px-4 py-2.5 text-[14.5px] transition-colors ${
+                    className={`block w-full rounded-xl px-4 py-2.5 text-left text-[14.5px] transition-colors duration-fast ease-swift ${
                       o.value === sort
                         ? "bg-haze font-semibold text-ink"
                         : "text-smoke hover:bg-haze hover:text-ink"
@@ -178,12 +185,12 @@ function ShopContent() {
         </div>
 
         {chips.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 mt-3">
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
             {chips.map((chip) => (
               <button
                 key={chip.key}
                 onClick={() => dropParam(chip.key)}
-                className="group inline-flex items-center gap-2 rounded-full bg-ink text-paper-pure pl-4 pr-3 py-2 text-[13.5px] font-medium hover:bg-ink-soft transition-colors"
+                className="press group inline-flex items-center gap-2 rounded-full bg-ink py-2 pl-4 pr-3 text-[13.5px] font-medium text-paper-pure transition-colors duration-fast ease-swift hover:bg-ink-soft"
               >
                 {chip.label}
                 <X size={13} strokeWidth={2.6} className="opacity-60 group-hover:opacity-100" />
@@ -199,17 +206,17 @@ function ShopContent() {
         )}
       </div>
 
-      <div className="pt-8">
+      <div className="pt-6 md:pt-8">
         {/* Highlighted products from a custom URL (?cu=) — pinned on top. */}
         {highlights.length > 0 && (
-          <div className="mb-14">
+          <div className="mb-12 md:mb-14">
             <div className="flex items-center gap-2.5 mb-6">
               <span className="w-8 h-8 rounded-full bg-beam flex items-center justify-center">
                 <Sparkles size={15} className="text-ink" />
               </span>
               <h2 className="text-[20px] font-bold text-ink tracking-[-0.03em]">Picked for you</h2>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-x-5 gap-y-10">
+            <div className="grid grid-cols-2 gap-x-3.5 gap-y-7 sm:gap-x-5 sm:gap-y-10 md:grid-cols-3 xl:grid-cols-4">
               {highlights.map((product) => (
                 <ProductCard key={`hl-${product._id}`} product={product} />
               ))}
@@ -222,9 +229,9 @@ function ShopContent() {
             <Spinner size="lg" />
           </div>
         ) : products.length === 0 ? (
-          <div className="rounded-4xl bg-paper-pure shadow-soft py-24 text-center px-6">
-            <p className="text-[24px] font-bold text-ink tracking-[-0.03em]">Nothing here yet</p>
-            <p className="text-[15px] text-smoke mt-2 max-w-[40ch] mx-auto leading-relaxed">
+          <div className="rounded-4xl bg-paper-pure px-6 py-16 text-center shadow-soft md:py-24">
+            <p className="text-[21px] font-bold tracking-[-0.03em] text-ink md:text-[24px]">Nothing here yet</p>
+            <p className="mx-auto mt-2 max-w-[40ch] text-[15px] leading-relaxed text-smoke">
               No products match this combination. Try loosening a filter or two.
             </p>
             {chips.length > 0 && (
@@ -234,7 +241,7 @@ function ShopContent() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-x-5 gap-y-10">
+          <div className="grid grid-cols-2 gap-x-3.5 gap-y-7 sm:gap-x-5 sm:gap-y-10 md:grid-cols-3 xl:grid-cols-4">
             {products.map((product) => (
               <ProductCard key={product._id} product={product} />
             ))}

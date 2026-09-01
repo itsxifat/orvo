@@ -45,7 +45,7 @@ export default function TopStrip({ text, link }) {
           <ArrowUpRight
             size={15}
             strokeWidth={2.4}
-            className="shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+            className="shrink-0 transition-transform duration-base ease-swift group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
           />
         )}
       </>

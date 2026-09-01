@@ -8,6 +8,7 @@ import Link from "next/link";
 import { isStaff } from "@/lib/permissions";
 import Wordmark from "@/components/brand/Wordmark";
 import { GoogleIcon } from "@/components/auth/fields";
+import AuthBackdrop from "@/components/auth/AuthBackdrop";
 
 // The panel door. Deliberately unlike the storefront sign-in: one dark card,
 // no marketing, nothing to browse — just the lock and the form.
@@ -76,9 +77,8 @@ function AdminLoginForm() {
 
   return (
     <div className="min-h-screen bg-ink-deep flex items-center justify-center p-4 sm:p-6 relative overflow-hidden">
-      {/* Ambient light so the card sits in a space, not on a flat wall */}
-      <div aria-hidden className="absolute -top-40 -left-32 w-[520px] h-[520px] rounded-full bg-beam/10 blur-[120px]" />
-      <div aria-hidden className="absolute -bottom-48 -right-24 w-[480px] h-[480px] rounded-full bg-signal/10 blur-[120px]" />
+      {/* Same woven ground as the storefront sign-in, in the dark register */}
+      <AuthBackdrop tone="dark" />
 
       <div className="relative w-full max-w-[440px]">
         <div className="flex items-center justify-between mb-7">

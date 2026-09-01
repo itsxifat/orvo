@@ -21,6 +21,43 @@
   --muted: #6E6C68;
   --surface: #FFFFFF;
   --hairline: #E6E3DC;
+
+  /* ── Motion ───────────────────────────────────────────────────────────────
+     Four curves and four durations, and nothing else. Every transition on the
+     site picks from this set so the whole interface moves like one object.
+
+       out    decisive — leaves fast, settles quietly. The default.
+       soft   for large surfaces travelling a long way (sheets, drawers).
+       spring a touch of overshoot, only ever on a press or a pop-in.
+       inout  for things that move and come back (accordions, rotations).
+
+     Hover in particular is kept short. A 800ms creep reads as the page
+     lagging behind the cursor; ~300ms reads as the page responding to it. */
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.42, 0.64, 1);
+  --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --dur-fast: 150ms;
+  --dur: 260ms;
+  --dur-slow: 420ms;
+  --dur-reveal: 700ms;
+
+  /* Mirrors .container-custom's padding. `.bleed` reads it to run a rail out
+     to the screen edge while keeping its first card on the page grid. */
+  --gutter: 1.25rem;
+}
+
+@media (min-width: 640px) {
+  :root { --gutter: 2rem; }
+}
+
+@media (min-width: 1024px) {
+  :root { --gutter: 2.5rem; }
+}
+
+@media (min-width: 1536px) {
+  :root { --gutter: 3.5rem; }
 }
 
 html[data-strip="up"],
@@ -77,6 +114,25 @@ html[data-strip="off"] {
     outline-offset: 2px;
     border-radius: 4px;
   }
+
+  /* Nothing on a touch screen should flash grey before it acts. */
+  a, button, [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* One switch for the whole site. Motion is decoration here — every
+     transition carries a state that is also expressed by colour or position,
+     so cutting the animation never costs information. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
 @layer components {
@@ -85,10 +141,26 @@ html[data-strip="off"] {
   }
 
   /* ── Buttons — pills, always ───────────────────────────────────────────── */
+  /* `transition-all` used to animate layout properties too, so a button that
+     changed width mid-hover crawled to its new size. Only the four properties
+     that actually change are transitioned; the press is separate and fast. */
   .btn-base {
     @apply inline-flex items-center justify-center gap-2 rounded-full px-7 py-3.5
-           text-[14px] font-semibold tracking-[-0.01em]
-           transition-all duration-200 active:scale-[0.98];
+           text-[14px] font-semibold tracking-[-0.01em];
+    transition:
+      background-color var(--dur) var(--ease-out),
+      border-color var(--dur) var(--ease-out),
+      color var(--dur) var(--ease-out),
+      box-shadow var(--dur) var(--ease-out),
+      transform var(--dur) var(--ease-spring);
+  }
+
+  /* Down is instant, release springs back. Touching a control should feel like
+     pressing something physical, not like starting an animation. */
+  .btn-base:active {
+    transform: scale(0.96);
+    transition-duration: 80ms;
+    transition-timing-function: var(--ease-out);
   }
 
   .btn-primary {
@@ -192,11 +264,24 @@ html[data-strip="off"] {
   }
 
   /* Chip used for sizes, filters and tags. */
+  /* No lift on hover. Moving an element one pixel out from under the cursor is
+     enough to fire mouseleave on its own boundary, and the chip then flickers
+     between the two states for as long as the pointer rests on the edge. The
+     border and ground carry the state instead — nothing moves. */
   .chip {
     @apply inline-flex items-center justify-center rounded-full border
            border-haze-dark bg-paper-pure px-4 py-2 text-[13px] font-medium
-           text-ink transition-all duration-200
-           hover:border-ink hover:-translate-y-px;
+           text-ink hover:border-ink hover:bg-haze;
+    transition:
+      background-color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out),
+      transform var(--dur) var(--ease-spring);
+  }
+
+  .chip:active {
+    transform: scale(0.96);
+    transition-duration: 80ms;
   }
 
   .chip-active {
@@ -205,7 +290,11 @@ html[data-strip="off"] {
 
   .chip-off {
     @apply border-haze-dark bg-haze text-smoke-light cursor-not-allowed
-           hover:border-haze-dark hover:translate-y-0;
+           hover:border-haze-dark hover:bg-haze;
+  }
+
+  .chip-off:active {
+    transform: none;
   }
 }
 
@@ -265,6 +354,98 @@ html[data-strip="off"] {
   .clip-round {
     -webkit-mask-image: -webkit-radial-gradient(white, black);
     transform: translateZ(0);
+  }
+
+  /* ── Horizontal rails ──────────────────────────────────────────────────
+     Phones get rails where desktop gets grids: one thumb movement instead of
+     three screens of scrolling, with the next card peeking so it is obvious
+     there is more. */
+  .rail {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-padding-left: var(--gutter);
+  }
+
+  .rail > * {
+    scroll-snap-align: start;
+    flex: none;
+  }
+
+  /* Run to the screen edge from inside a .container-custom, without losing
+     the left alignment of the first item. */
+  .bleed {
+    margin-left: calc(var(--gutter) * -1);
+    margin-right: calc(var(--gutter) * -1);
+    padding-left: var(--gutter);
+    padding-right: var(--gutter);
+  }
+
+  /* ── Shared interaction language ───────────────────────────────────────
+     Three classes cover almost every hover on the site. All of them move a
+     CHILD of the hovered box, never the box itself: an element that shifts
+     under the cursor can cross its own boundary, fire mouseleave, shift back,
+     and flicker for as long as the pointer rests on the edge. */
+
+  /* The photo inside a frame. Short and decisive — the old 800ms crawl read
+     as the page lagging behind the pointer. */
+  .media-zoom {
+    transition: transform var(--dur-slow) var(--ease-out);
+    will-change: transform;
+  }
+
+  /* A card's frame rising while the card's own hit box stays put. */
+  .media-lift {
+    transition:
+      transform var(--dur-slow) var(--ease-out),
+      box-shadow var(--dur-slow) var(--ease-out);
+  }
+
+  /* Anything that should feel pressable but is not a .btn-base. */
+  .press {
+    transition: transform var(--dur) var(--ease-spring);
+  }
+
+  .press:active {
+    transform: scale(0.96);
+    transition-duration: 80ms;
+    transition-timing-function: var(--ease-out);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .group:hover .media-zoom {
+      transform: scale(1.045);
+    }
+
+    .group:hover .media-lift {
+      transform: translate3d(0, -6px, 0);
+      box-shadow: 0 2px 6px rgba(15, 15, 17, 0.05), 0 22px 48px -20px rgba(15, 15, 17, 0.22);
+    }
+  }
+
+  /* Scroll reveal. The component sets --reveal-delay and toggles the state;
+     everything below the fold starts hidden so nothing flashes in first. */
+  .reveal {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+    transition:
+      opacity var(--dur-reveal) var(--ease-out) var(--reveal-delay, 0ms),
+      transform var(--dur-reveal) var(--ease-out) var(--reveal-delay, 0ms);
+  }
+
+  .reveal[data-shown="true"] {
+    opacity: 1;
+    transform: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal {
+      opacity: 1;
+      transform: none;
+    }
   }
 }
 

@@ -109,6 +109,12 @@ const orderSchema = new mongoose.Schema(
       },
     ],
 
+    // Whether this order is currently holding its units out of inventory.
+    // Set when the stock is reserved at creation, cleared when a cancellation
+    // hands it back. Without this flag a second cancel — or a cancel after a
+    // partial return — would credit the stock twice. See lib/stock.js.
+    stockReserved: { type: Boolean, default: false },
+
     // ── Returns / partial delivery ──────────────────────────────────────────
     // Set when staff record a return; totals above are recomputed accordingly.
     returnedAmount: { type: Number, default: 0 }, // value refunded for returned items
@@ -158,11 +164,16 @@ const orderSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Fallback numbering for any code path that saves an order without going
+// through createOrderWithNumber. Routed through the same atomic counter — the
+// old `countDocuments() + 1` here handed concurrent saves the same number and
+// the unique index below turned that into a failed checkout.
 orderSchema.pre("save", async function () {
   if (!this.orderNumber) {
-    const year = new Date().getFullYear();
-    const count = await mongoose.model("Order").countDocuments();
-    this.orderNumber = `ORV-${year}-${String(count + 1).padStart(5, "0")}`;
+    // Relative, not "@/lib/...": this model is also imported by the plain-node
+    // scripts in scripts/, which have no path-alias resolution.
+    const { nextOrderNumber } = await import("../lib/order-number.js");
+    this.orderNumber = await nextOrderNumber(mongoose.model("Order"), "ORV");
   }
 });
 
