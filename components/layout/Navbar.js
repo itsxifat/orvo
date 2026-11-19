@@ -7,44 +7,72 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
   ShoppingBag, Search, User, Menu, X,
-  ArrowUpRight, ChevronDown, LogOut, Package, Settings, ArrowRight,
+  ArrowUpRight, ChevronDown, LogOut, Package, ArrowRight,
 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
-import { shouldUnoptimizeImage } from "@/lib/utils";
+import { useSettings } from "@/context/SettingsContext";
+import { formatPrice, shouldUnoptimizeImage } from "@/lib/utils";
 import { track } from "@/lib/tracking/client";
-import { isStaff } from "@/lib/permissions";
+import WasPrice from "@/components/ui/WasPrice";
 import Wordmark from "@/components/brand/Wordmark";
 import TopStrip from "@/components/layout/TopStrip";
 
-let _navCache = null;
-let _navCacheTs = 0;
+// The menu, the announcement and the shop's name come from the brand ERP
+// (GET /storefront/v1/site → lib/storefront.js mapSite), read once per request
+// by the root layout and handed down through SettingsContext. Menu entries are
+// `category` (its visible subcategories under it, two levels), `dropdown` (its
+// own children; no address of its own) or `custom` (a link).
 
 // ─── Desktop nav ──────────────────────────────────────────────────────────────
 
 function NavLink({ item, isOpen, onOpen, onClose }) {
   const hasChildren = item.children?.length > 0;
+  const className = `flex items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-[14.5px] font-medium tracking-[-0.01em] transition-colors duration-fast ease-swift ${
+    item.highlighted
+      ? "text-signal hover:bg-signal-soft"
+      : isOpen
+      ? "bg-haze text-ink"
+      : "text-ink/70 hover:text-ink hover:bg-haze"
+  }`;
+  const chevron = hasChildren && (
+    <ChevronDown
+      size={14}
+      strokeWidth={2.2}
+      aria-hidden
+      className={`transition-transform duration-base ease-settle ${isOpen ? "rotate-180" : ""}`}
+    />
+  );
 
   return (
-    <div className="relative" onMouseEnter={() => (hasChildren ? onOpen(item._id) : onClose())}>
-      <Link
-        href={item.href}
-        className={`flex items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-[14.5px] font-medium tracking-[-0.01em] transition-colors duration-fast ease-swift ${
-          item.highlighted
-            ? "text-signal hover:bg-signal-soft"
-            : isOpen
-            ? "bg-haze text-ink"
-            : "text-ink/70 hover:text-ink hover:bg-haze"
-        }`}
-      >
-        {item.label}
-        {hasChildren && (
-          <ChevronDown
-            size={14}
-            strokeWidth={2.2}
-            className={`transition-transform duration-base ease-settle ${isOpen ? "rotate-180" : ""}`}
-          />
-        )}
-      </Link>
+    <div
+      className="relative"
+      onMouseEnter={() => (hasChildren ? onOpen(item._id) : onClose())}
+      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+    >
+      {item.href ? (
+        <Link
+          href={item.href}
+          className={className}
+          onFocus={() => (hasChildren ? onOpen(item._id) : onClose())}
+          aria-haspopup={hasChildren ? "true" : undefined}
+          aria-expanded={hasChildren ? isOpen : undefined}
+        >
+          {item.label}
+          {chevron}
+        </Link>
+      ) : (
+        // A dropdown has no page of its own: the label only opens its panel.
+        <button
+          type="button"
+          className={className}
+          onClick={() => (isOpen ? onClose() : onOpen(item._id))}
+          aria-haspopup="true"
+          aria-expanded={isOpen}
+        >
+          {item.label}
+          {chevron}
+        </button>
+      )}
     </div>
   );
 }
@@ -56,6 +84,7 @@ function MegaPanel({ item, onClose }) {
     <div
       className="absolute left-0 right-0 top-full hidden animate-reveal pt-3 lg:block"
       onMouseLeave={onClose}
+      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
     >
       <div className="container-custom">
         <div className="rounded-4xl bg-paper-pure shadow-pop p-8 overflow-hidden">
@@ -65,23 +94,25 @@ function MegaPanel({ item, onClose }) {
               <p className="text-[15px] text-smoke leading-relaxed mt-4">
                 {columns.length} line{columns.length === 1 ? "" : "s"} in this collection.
               </p>
-              <Link
-                href={item.href}
-                onClick={onClose}
-                className="inline-flex items-center gap-1.5 mt-5 text-[14px] font-semibold text-ink hover:text-signal transition-colors"
-              >
-                Shop all
-                <span className="w-6 h-6 rounded-full bg-beam flex items-center justify-center">
-                  <ArrowUpRight size={13} strokeWidth={2.4} className="text-ink" />
-                </span>
-              </Link>
+              {item.href && (
+                <Link
+                  href={item.href}
+                  onClick={onClose}
+                  className="inline-flex items-center gap-1.5 mt-5 text-[14px] font-semibold text-ink hover:text-signal transition-colors"
+                >
+                  Shop all
+                  <span className="w-6 h-6 rounded-full bg-beam flex items-center justify-center">
+                    <ArrowUpRight size={13} strokeWidth={2.4} className="text-ink" />
+                  </span>
+                </Link>
+              )}
             </div>
 
             <div className="flex-1 grid grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-7">
               {columns.map((child) => (
                 <div key={child._id}>
                   <Link
-                    href={child.href}
+                    href={child.href || "/shop"}
                     onClick={onClose}
                     className="block text-[15px] font-semibold text-ink hover:text-signal transition-colors"
                   >
@@ -92,7 +123,7 @@ function MegaPanel({ item, onClose }) {
                       {child.children.map((gc) => (
                         <li key={gc._id}>
                           <Link
-                            href={gc.href}
+                            href={gc.href || "/shop"}
                             onClick={onClose}
                             className="text-[14px] text-smoke hover:text-ink transition-colors"
                           >
@@ -121,7 +152,7 @@ function MobileNavItem({ item, onClose }) {
   if (!hasChildren) {
     return (
       <Link
-        href={item.href}
+        href={item.href || "/shop"}
         onClick={onClose}
         className={`block rounded-2xl px-4 py-3.5 text-[19px] font-semibold tracking-[-0.02em] ${
           item.highlighted ? "text-signal" : "text-ink"
@@ -135,7 +166,9 @@ function MobileNavItem({ item, onClose }) {
   return (
     <div>
       <button
+        type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
         className="flex items-center justify-between w-full rounded-2xl px-4 py-3.5 text-left"
       >
         <span
@@ -146,6 +179,7 @@ function MobileNavItem({ item, onClose }) {
           {item.label}
         </span>
         <span
+          aria-hidden
           className={`flex h-8 w-8 items-center justify-center rounded-full bg-haze text-ink transition-transform duration-base ease-settle ${
             open ? "rotate-180" : ""
           }`}
@@ -156,17 +190,19 @@ function MobileNavItem({ item, onClose }) {
 
       {open && (
         <div className="animate-reveal pb-2 pl-4">
-          <Link
-            href={item.href}
-            onClick={onClose}
-            className="block py-2 text-[15px] font-medium text-signal"
-          >
-            All {item.label}
-          </Link>
+          {item.href && (
+            <Link
+              href={item.href}
+              onClick={onClose}
+              className="block py-2 text-[15px] font-medium text-signal"
+            >
+              All {item.label}
+            </Link>
+          )}
           {item.children.map((child) => (
             <div key={child._id}>
               <Link
-                href={child.href}
+                href={child.href || "/shop"}
                 onClick={onClose}
                 className="block py-2 text-[15px] text-ink/75 hover:text-ink transition-colors"
               >
@@ -177,7 +213,7 @@ function MobileNavItem({ item, onClose }) {
                   {child.children.map((gc) => (
                     <Link
                       key={gc._id}
-                      href={gc.href}
+                      href={gc.href || "/shop"}
                       onClick={onClose}
                       className="block py-1.5 text-[14px] text-smoke hover:text-ink transition-colors"
                     >
@@ -196,7 +232,7 @@ function MobileNavItem({ item, onClose }) {
 
 // ─── Full-screen search ───────────────────────────────────────────────────────
 
-function SearchOverlay({ open, onClose }) {
+function SearchOverlay({ open, onClose, shortcuts }) {
   const router = useRouter();
   const inputRef = useRef(null);
   const timer = useRef(null);
@@ -223,6 +259,7 @@ function SearchOverlay({ open, onClose }) {
     };
   }, [open, onClose]);
 
+  // Live search: the ERP's search (app/api/search), up to eight products.
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2) { setResults([]); setLoading(false); return undefined; }
@@ -255,24 +292,35 @@ function SearchOverlay({ open, onClose }) {
   const q = query.trim();
 
   return (
-    <div className="fixed inset-0 z-[80] animate-fade-in overflow-y-auto bg-ink/40 backdrop-blur-md">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Search"
+      className="fixed inset-0 z-[80] animate-fade-in overflow-y-auto bg-ink/40 backdrop-blur-md"
+      onClick={onClose}
+    >
       <div className="container-custom py-4 md:py-8">
-        <div className="animate-reveal overflow-hidden rounded-4xl bg-paper-pure shadow-pop">
-          <form onSubmit={submit} className="flex items-center gap-4 px-6 md:px-8 py-5 border-b border-haze-dark">
-            <Search size={22} strokeWidth={2} className="text-smoke shrink-0" />
+        <div
+          className="animate-reveal overflow-hidden rounded-4xl bg-paper-pure shadow-pop"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <form onSubmit={submit} role="search" className="flex items-center gap-4 px-6 md:px-8 py-5 border-b border-haze-dark">
+            <Search size={22} strokeWidth={2} className="text-smoke shrink-0" aria-hidden />
             <input
               ref={inputRef}
-              type="text"
+              type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search for a piece…"
-              className="flex-1 min-w-0 bg-transparent text-[20px] md:text-[26px] font-medium tracking-[-0.02em] text-ink placeholder-smoke-light focus:outline-none py-1"
+              aria-label="Search products"
+              enterKeyHint="search"
+              className="flex-1 min-w-0 bg-transparent text-[20px] md:text-[26px] font-medium tracking-[-0.02em] text-ink placeholder-smoke-light focus:outline-none py-1 [&::-webkit-search-cancel-button]:hidden"
             />
             <button
               type="button"
               onClick={onClose}
               aria-label="Close search"
-              className="w-10 h-10 rounded-full bg-haze hover:bg-haze-dark flex items-center justify-center text-ink transition-colors shrink-0"
+              className="w-11 h-11 rounded-full bg-haze hover:bg-haze-dark flex items-center justify-center text-ink transition-colors shrink-0"
             >
               <X size={18} strokeWidth={2} />
             </button>
@@ -280,23 +328,25 @@ function SearchOverlay({ open, onClose }) {
 
           <div className="p-6 md:p-8">
             {q.length < 2 ? (
-              <>
-                <p className="text-[13px] font-semibold text-smoke mb-4">Popular right now</p>
-                <div className="flex flex-wrap gap-2">
-                  {["New arrivals", "On sale", "Shirts", "Denim", "Outerwear", "Accessories"].map((t) => (
-                    <button key={t} onClick={() => setQuery(t)} className="chip">
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </>
+              shortcuts.length > 0 && (
+                <>
+                  <p className="text-[13px] font-semibold text-smoke mb-4">Jump to</p>
+                  <div className="flex flex-wrap gap-2">
+                    {shortcuts.map((s) => (
+                      <Link key={s.href} href={s.href} onClick={onClose} className="chip">
+                        {s.label}
+                      </Link>
+                    ))}
+                  </div>
+                </>
+              )
             ) : loading ? (
-              <p className="text-[15px] text-smoke">Searching…</p>
+              <p className="text-[15px] text-smoke" aria-live="polite">Searching…</p>
             ) : results.length === 0 ? (
-              <p className="text-[15px] text-smoke">Nothing matches that search.</p>
+              <p className="text-[15px] text-smoke" aria-live="polite">Nothing matches that search.</p>
             ) : (
               <>
-                <p className="text-[13px] font-semibold text-smoke mb-3">
+                <p className="text-[13px] font-semibold text-smoke mb-3" aria-live="polite">
                   {results.length} result{results.length !== 1 ? "s" : ""}
                 </p>
                 <div className="space-y-1">
@@ -307,17 +357,26 @@ function SearchOverlay({ open, onClose }) {
                       onClick={onClose}
                       className="group flex items-center gap-4 rounded-2xl p-2 hover:bg-haze transition-colors"
                     >
-                      <div className="w-14 h-16 rounded-2xl bg-haze shrink-0 overflow-hidden">
-                        {product.image ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={product.image} alt="" className="w-full h-full object-cover" />
-                        ) : null}
+                      <div className="relative w-14 h-16 rounded-2xl bg-haze shrink-0 overflow-hidden">
+                        {product.image && (
+                          <Image
+                            src={product.image}
+                            alt=""
+                            fill
+                            sizes="56px"
+                            unoptimized={shouldUnoptimizeImage(product.image)}
+                            className="object-cover"
+                          />
+                        )}
                       </div>
                       <p className="flex-1 min-w-0 text-[15.5px] font-medium text-ink truncate">
                         {product.name}
                       </p>
-                      <span className="text-[15px] font-semibold text-ink tabular-nums shrink-0">
-                        Tk {product.price.toLocaleString()}
+                      <span className="flex shrink-0 flex-col items-end leading-tight sm:flex-row sm:items-baseline sm:gap-2">
+                        <span className={`text-[15px] font-semibold tabular-nums ${product.compareAt ? "text-signal" : "text-ink"}`}>
+                          {formatPrice(product.price)}
+                        </span>
+                        <WasPrice amount={product.compareAt} className="text-[13px] text-smoke" />
                       </span>
                       <span className="w-9 h-9 rounded-full bg-haze group-hover:bg-beam flex items-center justify-center transition-colors shrink-0">
                         <ArrowRight size={15} strokeWidth={2.2} className="text-ink" />
@@ -325,7 +384,7 @@ function SearchOverlay({ open, onClose }) {
                     </Link>
                   ))}
                 </div>
-                <button onClick={submit} className="btn-outline mt-6 w-full sm:w-auto">
+                <button type="button" onClick={submit} className="btn-outline mt-6 w-full sm:w-auto">
                   See every result
                   <ArrowUpRight size={16} strokeWidth={2.2} />
                 </button>
@@ -344,6 +403,10 @@ export default function Navbar() {
   const { itemCount, openDrawer } = useCart();
   const { data: session } = useSession();
   const pathname = usePathname();
+  const { settings } = useSettings();
+  const navItems = settings?.navItems || [];
+  const announcement = settings?.announcement || { enabled: false, text: "", link: "" };
+  const siteName = settings?.siteInfo?.siteName || "Orvo";
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -351,28 +414,8 @@ export default function Navbar() {
   const [openMenu, setOpenMenu] = useState(null);
   const [scrolled, setScrolled] = useState(false);
   const [stripUp, setStripUp] = useState(false);
-  const [navItems, setNavItems] = useState([]);
-  const [announcement, setAnnouncement] = useState({ enabled: true, text: "", link: "" });
 
   const accountRef = useRef(null);
-
-  useEffect(() => {
-    const now = Date.now();
-    if (_navCache && now - _navCacheTs < 60_000) {
-      setNavItems(_navCache.navItems || []);
-      setAnnouncement(_navCache.announcement || { enabled: true, text: "", link: "" });
-      return;
-    }
-    fetch("/api/nav")
-      .then((r) => r.json())
-      .then((data) => {
-        _navCache = data;
-        _navCacheTs = Date.now();
-        setNavItems(data.navItems || []);
-        setAnnouncement(data.announcement || { enabled: true, text: "", link: "" });
-      })
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     const onScroll = () => {
@@ -389,8 +432,13 @@ export default function Navbar() {
     const handler = (e) => {
       if (accountRef.current && !accountRef.current.contains(e.target)) setAccountOpen(false);
     };
+    const onKey = (e) => { if (e.key === "Escape") setAccountOpen(false); };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", onKey);
+    };
   }, []);
 
   useEffect(() => {
@@ -405,32 +453,43 @@ export default function Navbar() {
     return () => { document.body.style.overflow = ""; };
   }, [mobileOpen]);
 
-  // Keep --header-h honest so every sticky panel below lines up with the bar.
+  // The strip is always there at the top of the page: the shop's standing
+  // promises, or the announcement staff switched on in the ERP. It slides away
+  // once the page scrolls. Keep --header-h honest so every sticky panel below
+  // lines up with the bar (app/globals.css).
   useEffect(() => {
-    document.documentElement.dataset.strip = !announcement.enabled
-      ? "off"
-      : stripUp
-      ? "up"
-      : "down";
-  }, [announcement.enabled, stripUp]);
+    document.documentElement.dataset.strip = stripUp ? "up" : "down";
+  }, [stripUp]);
 
   const closeMobile = useCallback(() => setMobileOpen(false), []);
   const closeMenu = useCallback(() => setOpenMenu(null), []);
+  const closeSearch = useCallback(() => setSearchOpen(false), []);
   const activeItem = navItems.find((i) => i._id === openMenu);
-  const showStrip = announcement.enabled;
+  const announced = announcement.enabled && announcement.text ? announcement : null;
+
+  // The search overlay's shortcuts: the shop's own lists, then the top
+  // categories of the ERP's menu.
+  const shortcuts = [
+    { label: "New arrivals", href: "/shop?newArrival=true" },
+    { label: "On sale", href: "/shop?onSale=true" },
+    ...navItems
+      .filter((i) => i.type === "category" && i.href)
+      .slice(0, 4)
+      .map((i) => ({ label: i.label, href: i.href })),
+  ].filter((s, i, all) => all.findIndex((o) => o.href === s.href) === i);
 
   const iconBtn =
-    "press flex h-10 w-10 items-center justify-center rounded-full text-ink transition-colors duration-fast ease-swift hover:bg-haze";
+    "press flex h-11 w-11 items-center justify-center rounded-full text-ink transition-colors duration-fast ease-swift hover:bg-haze";
 
   return (
     <>
       <header
         className={`fixed left-0 right-0 top-0 z-40 transition-transform duration-slow ease-soft ${
-          showStrip && stripUp ? "-translate-y-12" : "translate-y-0"
+          stripUp ? "-translate-y-12" : "translate-y-0"
         }`}
         onMouseLeave={closeMenu}
       >
-        {showStrip && <TopStrip text={announcement.text} link={announcement.link} />}
+        <TopStrip text={announced?.text} link={announced?.link} />
 
         <div
           className={`relative transition-[background-color,box-shadow,backdrop-filter] duration-slow ease-swift ${
@@ -444,19 +503,21 @@ export default function Navbar() {
 
               <div className="flex items-center gap-1 shrink-0">
                 <button
-                  className={`lg:hidden -ml-2 ${iconBtn}`}
+                  type="button"
+                  className={`lg:hidden -ml-2.5 ${iconBtn}`}
                   onClick={() => setMobileOpen(true)}
                   aria-label="Open menu"
+                  aria-expanded={mobileOpen}
                 >
                   <Menu size={21} strokeWidth={2} />
                 </button>
-                <Link href="/" aria-label="Orvo home" className="block">
+                <Link href="/" aria-label={`${siteName} home`} className="block">
                   <Wordmark size="sm" className="lg:hidden" />
                   <Wordmark size="md" className="hidden lg:inline-flex" />
                 </Link>
               </div>
 
-              <nav className="hidden lg:flex items-center gap-0.5 ml-10 flex-1">
+              <nav aria-label="Main" className="hidden lg:flex items-center gap-0.5 ml-10 flex-1">
                 {navItems.map((item) => (
                   <NavLink
                     key={item._id}
@@ -468,16 +529,19 @@ export default function Navbar() {
                 ))}
               </nav>
 
-              <div className="flex items-center gap-1 ml-auto lg:ml-0 shrink-0">
-                <button className={iconBtn} onClick={() => setSearchOpen(true)} aria-label="Search">
+              <div className="flex items-center gap-0.5 ml-auto lg:ml-0 shrink-0">
+                <button type="button" className={iconBtn} onClick={() => setSearchOpen(true)} aria-label="Search">
                   <Search size={20} strokeWidth={2} />
                 </button>
 
                 <div className="relative" ref={accountRef}>
                   <button
+                    type="button"
                     className={iconBtn}
                     onClick={() => setAccountOpen((v) => !v)}
                     aria-label="Account"
+                    aria-haspopup="true"
+                    aria-expanded={accountOpen}
                   >
                     {session?.user?.image ? (
                       <Image
@@ -517,16 +581,8 @@ export default function Navbar() {
                                 <Icon size={17} strokeWidth={2} className="text-smoke" /> {label}
                               </Link>
                             ))}
-                            {isStaff(session.user.role) && (
-                              <Link
-                                href="/admin"
-                                onClick={() => setAccountOpen(false)}
-                                className="flex items-center gap-3 rounded-2xl px-4 py-3 text-[14.5px] font-medium text-signal hover:bg-signal-soft transition-colors"
-                              >
-                                <Settings size={17} strokeWidth={2} /> Admin panel
-                              </Link>
-                            )}
                             <button
+                              type="button"
                               onClick={() => { signOut({ callbackUrl: "/" }); setAccountOpen(false); }}
                               className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-[14.5px] text-smoke hover:bg-haze hover:text-ink transition-colors"
                             >
@@ -560,19 +616,21 @@ export default function Navbar() {
                 </div>
 
                 <button
+                  type="button"
                   onClick={openDrawer}
-                  aria-label="Cart"
-                  className="press relative ml-1 flex h-10 items-center gap-2 rounded-full bg-ink px-4 text-paper-pure transition-colors duration-fast ease-swift hover:bg-ink-soft"
+                  aria-label={`Bag, ${itemCount} item${itemCount === 1 ? "" : "s"}`}
+                  className="press relative ml-1 flex h-11 items-center gap-2 rounded-full bg-ink px-4 text-paper-pure transition-colors duration-fast ease-swift hover:bg-ink-soft"
                 >
                   <ShoppingBag size={17} strokeWidth={2} />
                   <span
                     key={itemCount}
+                    aria-hidden
                     className="animate-pop text-[14px] font-semibold leading-none tabular-nums"
                   >
                     {itemCount > 99 ? "99+" : itemCount}
                   </span>
                   {itemCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-beam ring-2 ring-paper" />
+                    <span aria-hidden className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-beam ring-2 ring-paper" />
                   )}
                 </button>
               </div>
@@ -586,11 +644,11 @@ export default function Navbar() {
       {/* Flow spacer — keeps the header's real height out of every page's markup */}
       <div aria-hidden className="h-[var(--header-h)]" />
 
-      <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <SearchOverlay open={searchOpen} onClose={closeSearch} shortcuts={shortcuts} />
 
       {/* ── Mobile drawer ─────────────────────────────────────────────────── */}
       <div
-        aria-hidden={!mobileOpen}
+        aria-hidden
         onClick={closeMobile}
         className={`fixed inset-0 z-[60] bg-ink/40 backdrop-blur-sm transition-opacity duration-slow ease-swift lg:hidden ${
           mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
@@ -598,21 +656,26 @@ export default function Navbar() {
       />
 
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Menu"
+        aria-hidden={!mobileOpen}
+        inert={mobileOpen ? undefined : ""}
         className={`fixed inset-y-3 right-3 z-[70] flex w-[88%] max-w-[380px] flex-col overflow-hidden rounded-4xl bg-paper-pure shadow-pop transition-transform duration-slow ease-soft lg:hidden ${
           mobileOpen ? "translate-x-0" : "translate-x-[calc(100%+1rem)]"
         }`}
       >
         <div className="flex items-center justify-between px-5 h-16 shrink-0">
-          <Link href="/" onClick={closeMobile}>
+          <Link href="/" onClick={closeMobile} aria-label={`${siteName} home`}>
             <Wordmark size="sm" />
           </Link>
-          <button onClick={closeMobile} className={`-mr-1 ${iconBtn}`} aria-label="Close menu">
+          <button type="button" onClick={closeMobile} className={`-mr-1 ${iconBtn}`} aria-label="Close menu">
             <X size={20} strokeWidth={2} />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 pb-8">
-          <nav>
+          <nav aria-label="Menu">
             {navItems.map((item, i) => (
               <div
                 key={item._id}
@@ -637,12 +700,8 @@ export default function Navbar() {
                 <Link href="/account/orders" onClick={closeMobile} className="flex items-center gap-3 py-2.5 text-[15px] text-ink">
                   <Package size={17} strokeWidth={2} className="text-smoke" /> Orders
                 </Link>
-                {isStaff(session.user.role) && (
-                  <Link href="/admin" onClick={closeMobile} className="flex items-center gap-3 py-2.5 text-[15px] font-medium text-signal">
-                    <Settings size={17} strokeWidth={2} /> Admin panel
-                  </Link>
-                )}
                 <button
+                  type="button"
                   onClick={() => { signOut({ callbackUrl: "/" }); closeMobile(); }}
                   className="flex items-center gap-3 py-2.5 text-[15px] text-smoke w-full text-left"
                 >

@@ -1,44 +1,25 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/mongoose";
-import CustomUrl from "@/models/CustomUrl";
-import { buildBasePath } from "@/lib/customUrl";
+import { getCustomLink } from "@/lib/storefront";
+import { CAMPAIGN_CODE } from "@/lib/storefront-map";
 
-// Public: the storefront resolves a ?cu=<code> suffix to its campaign config —
-// highlight products (in order), the top banner, and the modal notification.
-export async function GET(_, { params }) {
+// A campaign link's experience (?cu=<code>): the banner, the pop-up and the
+// products it highlights, from the brand ERP's Website → Campaign links
+// (GET /storefront/v1/custom-links/{code}, M35b, D-551), mapped by
+// lib/storefront-map.js → mapCustomLink onto what hooks/useCustomCampaign.js and
+// CustomUrlExperience draw: { code, title, basePath, banner, modal, highlightProducts }.
+// Reading a link counts nothing: the visit is counted once per browser session
+// by POST ./views.
+export async function GET(_request, { params: paramsPromise }) {
+  const params = await paramsPromise;
+  const code = String(params.code || "").trim();
+  if (!CAMPAIGN_CODE.test(code)) return NextResponse.json({ error: "Invalid code" }, { status: 400 });
   try {
-    await connectDB();
-    const code = String(params.code || "").trim();
-    if (!/^\d{4,6}$/.test(code)) {
-      return NextResponse.json({ error: "Invalid code" }, { status: 400 });
-    }
-
-    const doc = await CustomUrl.findOne({ code, isActive: true })
-      .populate("category", "name slug")
-      .populate({
-        path: "highlightProducts",
-        match: { isPublished: true },
-        select: "name slug images variants isNewArrival",
-      })
-      .lean();
-
-    if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-    // Count the visit without blocking the response.
-    CustomUrl.updateOne({ _id: doc._id }, { $inc: { views: 1 } }).catch(() => {});
-
-    return NextResponse.json({
-      code: doc.code,
-      title: doc.title,
-      basePath: buildBasePath(doc),
-      banner: doc.banner?.enabled ? doc.banner : null,
-      modal: doc.modal?.enabled ? doc.modal : null,
-      highlightProducts: (doc.highlightProducts || []).filter(Boolean),
-    });
-  } catch (err) {
-    console.error("GET /api/custom-url/[code] error:", err);
-    return NextResponse.json({ error: "Failed to load campaign" }, { status: 500 });
+    const link = await getCustomLink(code);
+    if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json(link, { headers: { "Cache-Control": "private, max-age=30" } });
+  } catch {
+    return NextResponse.json({ error: "Failed to load campaign" }, { status: 502 });
   }
 }

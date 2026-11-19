@@ -1,7 +1,14 @@
-export const metadata = {
-  title: "About Us — Orvo",
+import Link from "next/link";
+import { pageMetadata } from "@/lib/seo";
+
+// The title takes the shop's name from the layout's template (the ERP's
+// Website → Settings); the canonical address and share text come with it
+// (lib/seo.js).
+export const metadata = pageMetadata({
+  title: "About Us",
   description: "Learn about Orvo — our story, values, and commitment to premium fashion for Bangladesh.",
-};
+  path: "/about",
+});
 
 const VALUES = [
   {
@@ -125,9 +132,9 @@ export default function AboutPage() {
           <p className="text-smoke text-[14px] mb-8 max-w-md mx-auto">
             Discover our latest collections and find pieces that speak to your style.
           </p>
-          <a href="/shop" className="btn-primary">
+          <Link href="/shop" className="btn-primary">
             Shop the Collection
-          </a>
+          </Link>
         </div>
       </section>
     </>

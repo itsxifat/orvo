@@ -1,78 +1,93 @@
 export const dynamic = "force-dynamic";
 
+import { cache } from "react";
 import { notFound, permanentRedirect } from "next/navigation";
-import { connectDB } from "@/lib/mongoose";
-import Product from "@/models/Product";
-import Category from "@/models/Category";
-import "@/models/SizeChart";
-import { serializeDoc, formatPrice, calculateDiscount } from "@/lib/utils";
-import { cdnAbsoluteUrl } from "@/lib/cdn";
-import { getAncestors } from "@/lib/categories";
+import { getProduct, getSite } from "@/lib/storefront";
+import {
+  DEFAULT_SITE_NAME,
+  breadcrumbJsonLd,
+  clip,
+  pageMetadata,
+  productDescription,
+  productJsonLd,
+} from "@/lib/seo";
+import JsonLd from "@/components/seo/JsonLd";
 import ProductDetailClient from "./ProductDetailClient";
 
-async function getProduct(slug) {
-  await connectDB();
-  const product = await Product.findOne({ slug, isPublished: true })
-    .populate("category", "name slug")
-    .populate("sizeChart", "name columns rows")
-    .lean();
-  if (!product) return null;
+// The product, its sizes with live availability, size chart, related products
+// and any flash price, from the brand ERP. Metadata and the page share one read.
+const load = cache((slug) => getProduct(slug));
 
-  // Breadcrumb path (Mens › Shirts › Casual) from the category tree.
-  let categoryPath = [];
-  if (product.category?._id) {
-    const allCats = await Category.find({}).select("_id name slug parent").lean();
-    categoryPath = getAncestors(allCats, product.category._id);
-  }
-
-  const related = await Product.find({
-    category: product.category?._id,
-    _id: { $ne: product._id },
-    isPublished: true,
-  })
-    .limit(4)
-    .lean();
-
+// The product's search and sharing text: the ERP's SEO title and description
+// when staff wrote them, otherwise worked out from the product itself — what it
+// is, its price now and before, the sizes and colours in stock (lib/seo.js).
+function seoOf(product, site) {
+  const siteName = site?.siteInfo?.siteName || DEFAULT_SITE_NAME;
+  const cod = site?.paymentGateways?.cod?.enabled !== false;
   return {
-    product: serializeDoc(product),
-    related: serializeDoc(related),
-    categoryPath,
+    siteName,
+    title: clip(product.seoTitle || product.name, 70),
+    description: product.seoDescription ? clip(product.seoDescription, 160) : productDescription(product, { siteName, cod }),
   };
 }
 
-export async function generateMetadata({ params }) {
+export async function generateMetadata({ params: paramsPromise }) {
+  const params = await paramsPromise;
   try {
-    await connectDB();
-    const product = await Product.findOne({ slug: params.slug }).lean();
-    if (!product) return { title: "Product Not Found" };
-    // og:image is fetched by external crawlers (Facebook, WhatsApp, …) which
-    // can't use the same-origin proxy — give them an absolute, never-expiring
-    // signed CDN URL instead.
-    const ogImage = cdnAbsoluteUrl(product.images?.[0]);
-    return {
-      title: product.name,
-      description: product.description?.slice(0, 160) || `Shop ${product.name} at Orvo`,
-      openGraph: {
-        title: product.name,
-        images: ogImage ? [{ url: ogImage }] : [],
-      },
-    };
+    const [found, site] = await Promise.all([load(params.slug), getSite()]);
+    if (!found?.product) return { title: "Product not found", robots: { index: false, follow: true } };
+    const { product } = found;
+    const { siteName, title, description } = seoOf(product, site);
+    const variants = product.variants || [];
+    const inStock = variants.filter((v) => v.stock > 0);
+    const prices = (inStock.length ? inStock : variants).map((v) => v.price).filter((n) => Number.isFinite(n));
+    // The price and stock for Facebook and Pinterest (product:* tags).
+    const other = prices.length
+      ? {
+          "product:price:amount": Math.min(...prices).toFixed(2),
+          "product:price:currency": "BDT",
+          "product:availability": inStock.length ? "in stock" : "out of stock",
+          "product:condition": "new",
+          "product:brand": siteName,
+          "product:retailer_item_id": String(product.id),
+          ...(product.category?.name ? { "product:category": product.category.name } : {}),
+        }
+      : undefined;
+    return pageMetadata({ title, description, path: `/shop/${product.slug}`, siteName, other, image: null });
   } catch {
     return { title: "Product" };
   }
 }
 
-export default async function ProductPage({ params }) {
-  const data = await getProduct(params.slug);
-  if (!data) {
-    // The product may have moved to a new slug (name/SKU change) — 301 old → new.
-    await connectDB();
-    const moved = await Product.findOne({ previousSlugs: params.slug, isPublished: true })
-      .select("slug")
-      .lean();
-    if (moved?.slug && moved.slug !== params.slug) permanentRedirect(`/shop/${moved.slug}`);
-    notFound();
-  }
+export default async function ProductPage({ params: paramsPromise, searchParams: searchParamsPromise }) {
+  const params = await paramsPromise;
+  const searchParams = await searchParamsPromise;
+  const [found, site] = await Promise.all([load(params.slug), getSite()]);
+  // A product renamed in the ERP keeps its old address: answer it with a 301.
+  if (found?.redirect && found.redirect !== params.slug) permanentRedirect(`/shop/${found.redirect}`);
+  if (!found?.product) notFound();
 
-  return <ProductDetailClient product={data.product} related={data.related} categoryPath={data.categoryPath} />;
+  const { product, categoryPath } = found;
+  const { siteName, description } = seoOf(product, site);
+  const crumbs = [
+    { name: "Home", path: "/" },
+    { name: "Shop", path: "/shop" },
+    ...(categoryPath || []).map((c) => ({ name: c.name, path: `/shop?category=${c.slug}` })),
+    { name: product.name, path: `/shop/${product.slug}` },
+  ];
+
+  return (
+    <>
+      {/* The product with each size's price, regular price and stock, and the
+          breadcrumbs, for Google (lib/seo.js). */}
+      <JsonLd data={[productJsonLd(product, { siteName, description }), breadcrumbJsonLd(crumbs)]} />
+      {/* `?size=M&colour=White` opens the product with that variant chosen. */}
+      <ProductDetailClient
+        product={product}
+        related={found.related}
+        categoryPath={categoryPath}
+        preselect={{ size: [].concat(searchParams?.size || "")[0], colour: [].concat(searchParams?.colour || "")[0] }}
+      />
+    </>
+  );
 }

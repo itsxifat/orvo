@@ -1,12 +1,17 @@
-import { getSiteInfo } from "@/lib/getSiteInfo";
+import { pageMetadata } from "@/lib/seo";
+import { getSiteInfo } from "@/lib/storefront";
 import { telHref } from "@/lib/siteInfo";
 
-export const metadata = {
-  title: "Privacy Policy — Orvo",
+// The title takes the shop's name from the layout's template (the ERP's
+// Website → Settings); the canonical address and share text come with it
+// (lib/seo.js).
+export const metadata = pageMetadata({
+  title: "Privacy Policy",
   description: "Orvo's privacy policy — how we collect, use, and protect your information.",
-};
+  path: "/privacy",
+});
 
-// Re-read settings on each request so contact details stay in sync with admin.
+// Contact details come from the brand ERP (Website → Settings) on each request.
 export const dynamic = "force-dynamic";
 
 const LAST_UPDATED = "1 May 2025";
@@ -39,7 +44,6 @@ export default async function PrivacyPolicyPage() {
               <p>We collect information you provide directly to us when you:</p>
               <ul>
                 <li>Create an account or place an order</li>
-                <li>Subscribe to our newsletter</li>
                 <li>Contact us for customer support</li>
               </ul>
               <p>This information may include your name, email address, phone number, billing and shipping address, and payment information.</p>
@@ -98,7 +102,7 @@ export default async function PrivacyPolicyPage() {
                 <li>Request deletion of your account and associated data</li>
                 <li>Opt out of marketing communications at any time</li>
               </ul>
-              <p>To exercise these rights, please contact us at <a href={`mailto:${email}`}>{email}</a>.</p>
+              <p>To exercise these rights, please contact us{email && <> at <a href={`mailto:${email}`}>{email}</a></>}.</p>
             </LegalSection>
 
             <LegalSection title="8. Children's Privacy">
@@ -116,8 +120,8 @@ export default async function PrivacyPolicyPage() {
             <LegalSection title="10. Contact Us">
               <p>If you have any questions about this Privacy Policy or how we handle your data, please contact us:</p>
               <ul>
-                <li>Email: <a href={`mailto:${email}`}>{email}</a></li>
-                <li>Phone: <a href={telHref(phone)}>{phone}</a></li>
+                {email && (<li>Email: <a href={`mailto:${email}`}>{email}</a></li>)}
+                {phone && (<li>Phone: <a href={telHref(phone)}>{phone}</a></li>)}
                 <li>Address: {address}</li>
               </ul>
             </LegalSection>

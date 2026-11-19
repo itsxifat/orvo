@@ -13,6 +13,9 @@ function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token") || "";
+  // The ERP's links carry a 43-character token (app/api/auth/reset-password
+  // refuses anything else), so a mangled link is told so before it is used.
+  const tokenLooksRight = /^[A-Za-z0-9_-]{43}$/.test(token);
   const [loading, setLoading] = useState(false);
   const { register, handleSubmit, watch, formState: { errors } } = useForm();
 
@@ -24,7 +27,7 @@ function ResetPasswordForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, password: data.password }),
       });
-      const result = await res.json();
+      const result = await res.json().catch(() => ({}));
       if (!res.ok) {
         toast.error(result.error || "Could not reset your password");
         return;
@@ -38,7 +41,7 @@ function ResetPasswordForm() {
     }
   };
 
-  if (!token) {
+  if (!tokenLooksRight) {
     return (
       <AuthShell aside={{ label: "Sign in", href: "/auth/login" }}>
         <span className="w-14 h-14 rounded-full bg-signal-soft flex items-center justify-center">
@@ -66,18 +69,18 @@ function ResetPasswordForm() {
   return (
     <AuthShell aside={{ label: "Sign in", href: "/auth/login" }}>
       <AuthHeading title="Set a new password">
-        Make it at least six characters.
+        Make it at least eight characters.
       </AuthHeading>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <PasswordField
           label="New password"
-          placeholder="At least 6 characters"
+          placeholder="At least 8 characters"
           autoComplete="new-password"
           error={errors.password?.message}
           {...register("password", {
             required: "Choose a password",
-            minLength: { value: 6, message: "Use at least 6 characters" },
+            minLength: { value: 8, message: "Use at least 8 characters" },
           })}
         />
 

@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { useSession } from "next-auth/react";
 import { useCart } from "@/context/CartContext";
 import { useSettings } from "@/context/SettingsContext";
-import { formatPrice, shouldUnoptimizeImage } from "@/lib/utils";
+import { formatPrice, shouldUnoptimizeImage, PLACEHOLDER_IMAGE, normalizeBdPhone } from "@/lib/utils";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -24,20 +24,44 @@ import {
 import toast from "react-hot-toast";
 import Input from "@/components/ui/Input";
 import Spinner from "@/components/ui/Spinner";
-import { track } from "@/lib/tracking/client";
+import WasPrice from "@/components/ui/WasPrice";
+import { track, checkoutTracking } from "@/lib/tracking/client";
 import { bdPhoneField } from "@/lib/phone-field";
 
-// The zone the customer picks is the only structured piece of geography we ask
-// for now that the address is one free-text box, so it is what fills the `city`
-// the order schema, the courier and the payment gateway all expect. The detail
-// a rider actually navigates by lives in `street`.
-const ZONE_CITY = {
-  inside_dhaka: "Dhaka",
-  suburbs: "Dhaka (Suburb)",
-  outside_dhaka: "Outside Dhaka",
+// The checkout. Every figure on it is the brand ERP's quote for this cart,
+// delivery zone and codes (POST /api/cart/quote); "Place order" sends that
+// quote's figures as `expected`, and the ERP places the order only if nothing
+// moved (otherwise 409 CART_REPRICED with the new figures, shown here to
+// confirm). Each press carries its own idempotency key, reused if the press is
+// retried after a dropped connection, so an order is never placed twice.
+
+// The delivery zones the ERP's Website settings price (D-953): the shopper
+// picks one and writes the whole address in one box (no district or thana
+// pickers). The zone sets the delivery charge, so none is picked for them.
+const ZONES = ["inside_dhaka", "suburbs", "outside_dhaka"];
+const ZONE_OPTIONS = [
+  { value: "inside_dhaka", label: "Inside Dhaka", desc: "Gulshan, Dhanmondi, Mirpur, Uttara…" },
+  { value: "suburbs", label: "Suburbs", desc: "Savar, Gazipur, Narayanganj…" },
+  { value: "outside_dhaka", label: "Outside Dhaka", desc: "Chittagong, Sylhet, Rajshahi…" },
+];
+
+// The ERP discount engine's commonest reasons for refusing a typed code, in
+// the shop's voice; any other reason is shown as the ERP words it.
+const CODE_REASONS = {
+  not_found: "we couldn't find that code. Do check the spelling.",
+  expired: "that code has expired.",
+  minimum_not_met: "the bag doesn't reach that code's minimum yet.",
 };
 
-// Turn the server's verdict on the basket into one calm paragraph.
+function newKey() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+const taka = (money) => Number(money?.taka || 0);
+const localPhone = (value) => String(value || "").replace(/^\+?880/, "0");
+
+// Turn the ERP's verdict on the basket into one calm paragraph.
 //
 // Being told off at the till for something the shop did is the fastest way to
 // lose an order that was otherwise finished, so this never blames the customer
@@ -45,7 +69,8 @@ const ZONE_CITY = {
 function describeStockChanges(changed) {
   const gone = changed.filter((c) => c.status === "gone" || c.available === 0);
   const trimmed = changed.filter((c) => c.status === "limited" && c.available > 0);
-  if (!gone.length && !trimmed.length) return null;
+  const repriced = changed.filter((c) => c.status === "repriced");
+  if (!gone.length && !trimmed.length && !repriced.length) return null;
 
   const label = (c) => `${c.name || "One of your pieces"}${c.size ? ` (size ${c.size})` : ""}`;
   const lines = [];
@@ -60,13 +85,20 @@ function describeStockChanges(changed) {
   else if (trimmed.length > 1)
     lines.push("A few lines had less stock left than you asked for, so we set them to what is still there.");
 
+  if (repriced.length === 1) lines.push(repriced[0].reason || `The price of ${label(repriced[0])} changed.`);
+  else if (repriced.length > 1) lines.push("A few prices in your bag changed since you added them.");
+
   return {
     blocking: gone.length > 0,
-    title: gone.length ? "Sorry — that just sold out" : "We adjusted a quantity for you",
+    title: gone.length
+      ? "Sorry — that just sold out"
+      : trimmed.length
+      ? "We adjusted a quantity for you"
+      : "A price changed",
     body: lines.join(" "),
     hint: gone.length
       ? "Take it out of the bag below, or swap it for something else you like — everything else is ready to go."
-      : "Have a look at the quantities below and place your order whenever you're ready.",
+      : "Have a look at your order below — the total is the new one — and place it whenever you're ready.",
   };
 }
 
@@ -93,20 +125,29 @@ function Panel({ title, subtitle, icon: Icon, children }) {
 export default function CheckoutPage() {
   const router = useRouter();
   const { data: session } = useSession();
-  const { items, subtotal, updateQuantity, removeItem, clearCart, syncWithServer, mounted: cartMounted } = useCart();
+  const { items, subtotal, updateQuantity, removeItem, clearCart, syncWithServer, reconcile, mounted: cartMounted } = useCart();
   const { settings } = useSettings();
   const [paymentMethod, setPaymentMethod] = useState("cod");
-  const [shippingZone, setShippingZone] = useState("inside_dhaka");
+  const [zone, setZone] = useState("");
+  const [zoneError, setZoneError] = useState("");
   const [placing, setPlacing] = useState(false);
   const [done, setDone] = useState(null);
   const [couponInput, setCouponInput] = useState("");
   const [appliedCodes, setAppliedCodes] = useState([]);
-  const [discountResult, setDiscountResult] = useState(null);
   const [applyingCoupon, setApplyingCoupon] = useState(false);
   const [coupon, setCoupon] = useState(null);   // the answer to the last Apply
+  const [quote, setQuote] = useState(null);
+  const [quoting, setQuoting] = useState(false);
+  const [saved, setSaved] = useState([]);
+  const [savedChoice, setSavedChoice] = useState(null);
   const [notice, setNotice] = useState(null);
   const noticeRef = useRef(null);
   const couponRef = useRef(null);
+  const zoneRef = useRef(null);
+  const pressKey = useRef(null);
+  // The browser's half of the Purchase the ERP sends, fixed per press like its
+  // key, so a retried press sends the same body (nothing while tracking is off).
+  const pressTracking = useRef(undefined);
 
   // Sold-out lines stay in the bag on this page so the customer can see what
   // happened to their order; they are simply not part of it any more.
@@ -153,57 +194,126 @@ export default function CheckoutPage() {
     register,
     handleSubmit,
     setValue,
+    setError,
+    watch,
     formState: { errors },
   } = useForm({
     defaultValues: {
       name: session?.user?.name || "",
       email: session?.user?.email || "",
+      phone: "",
+      addressLine: "",
+      notes: "",
     },
   });
+  const phone = watch("phone");
 
-  const s = settings?.shipping || {};
-  const zoneFees = {
-    inside_dhaka: s.insideDhaka ?? 60,
-    suburbs: s.suburbs ?? 100,
-    outside_dhaka: s.outsideDhaka ?? 130,
-  };
-  const freeShippingEnabled = s.freeShippingEnabled ?? false;
-  const freeThreshold = s.freeShippingThreshold ?? settings?.siteInfo?.freeShippingThreshold ?? 1500;
-  const shippingIsFree = freeShippingEnabled || (freeThreshold > 0 && subtotal >= freeThreshold);
-  const baseShipping = shippingIsFree ? 0 : (zoneFees[shippingZone] ?? 60);
-  const discountTotal = discountResult?.discountTotal || 0;
-  const freeShip = !!discountResult?.freeShipping;
-  const shipping = freeShip ? 0 : baseShipping;
-  const total = Math.max(0, subtotal + shipping - discountTotal);
+  const fillAddress = useCallback(
+    (a) => {
+      setValue("name", a.name || "");
+      setValue("phone", localPhone(a.phone));
+      // An address saved before D-953 kept its area apart: it joins the one line.
+      setValue("addressLine", [a.addressLine, a.area].filter(Boolean).join(", "));
+      if (ZONES.includes(a.zone)) setZone(a.zone);
+      setSavedChoice(a.id || null);
+    },
+    [setValue]
+  );
 
-  // Re-evaluate automatic + applied-code discounts whenever the cart, zone, or
-  // codes change. Prices/eligibility are computed server-side.
+  // A signed-in shopper's saved addresses (kept in the ERP) fill the form in one tap.
   useEffect(() => {
-    if (liveItems.length === 0) { setDiscountResult(null); return; }
+    if (!session?.user?.id) return;
+    if (session.user.name) setValue("name", session.user.name);
+    if (session.user.email) setValue("email", session.user.email);
+    fetch("/api/account/profile")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((profile) => {
+        if (!profile) return;
+        setSaved(profile.addresses || []);
+        if (profile.phone) setValue("phone", localPhone(profile.phone));
+        const preferred = (profile.addresses || []).find((a) => a.isDefault) || profile.addresses?.[0];
+        if (preferred) fillAddress(preferred);
+      })
+      .catch(() => {});
+  }, [session?.user?.id, session?.user?.name, session?.user?.email, setValue, fillAddress]);
+
+  // The ways to pay the shop has switched on in the ERP.
+  const gateways = settings?.paymentGateways || {};
+  const paymentOptions = useMemo(
+    () => [
+      ...(gateways.cod?.enabled !== false
+        ? [{ value: "cod", label: "Cash on delivery", desc: "Pay the rider when your parcel arrives.", icon: Truck }]
+        : []),
+      ...(gateways.sslcommerz?.enabled
+        ? [{ value: "sslcommerz", label: "Pay online", desc: "bKash, Nagad or card — through SSLCommerz.", icon: CreditCard }]
+        : []),
+    ],
+    [gateways.cod?.enabled, gateways.sslcommerz?.enabled]
+  );
+
+  // Never leave a method selected that the shop has since switched off.
+  useEffect(() => {
+    if (paymentOptions.length && !paymentOptions.some((o) => o.value === paymentMethod)) {
+      setPaymentMethod(paymentOptions[0].value);
+    }
+  }, [paymentOptions, paymentMethod]);
+
+  const lines = useMemo(
+    () => items.filter((i) => !i.unavailable).map((i) => ({ skuId: i.skuId, qty: i.quantity })),
+    [items]
+  );
+  const quotePhone = normalizeBdPhone(phone || "");
+  const phoneForQuote = quotePhone.length === 11 ? quotePhone : undefined;
+
+  // Ask the ERP for the figures whenever the cart, the zone or the codes change.
+  const requestQuote = useCallback(
+    async (codes) => {
+      if (!lines.length) return null;
+      const res = await fetch("/api/cart/quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lines,
+          address: zone ? { zone } : undefined,
+          codes,
+          phone: phoneForQuote,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not price your bag");
+      return data.quote;
+    },
+    [lines, zone, phoneForQuote]
+  );
+
+  useEffect(() => {
+    if (!lines.length) { setQuote(null); return; }
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/discounts/validate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            items: liveItems.map((i) => ({ productId: i.productId, size: i.size, quantity: i.quantity })),
-            codes: appliedCodes,
-            shippingFee: baseShipping,
-          }),
-        });
-        const d = await res.json();
-        if (!cancelled) setDiscountResult(d);
-      } catch { /* ignore */ }
-    })();
-    return () => { cancelled = true; };
-    // liveItems is derived from items, which is already a dependency.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, appliedCodes, baseShipping]);
+    setQuoting(true);
+    const timer = setTimeout(() => {
+      requestQuote(appliedCodes)
+        .then((q) => { if (!cancelled) setQuote(q); })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setQuoting(false); });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [requestQuote, appliedCodes, lines.length]);
+
+  // The figures, all the ERP's own.
+  const shippingRule = settings?.shipping || {};
+  const itemsTotal = quote ? taka(quote.items) : subtotal;
+  const discountTotal = quote ? taka(quote.discount) : 0;
+  const delivery = quote ? Math.max(0, taka(quote.delivery) - taka(quote.deliveryDiscount)) : 0;
+  const deliveryCoupon = quote ? taka(quote.deliveryDiscount) > 0 : false;
+  const priced = !!quote && !!zone && quote.deliverable && quote.zone === zone;
+  const freeDelivery = !!quote?.freeShipping || (priced && delivery === 0);
+  const total = quote ? taka(quote.total) : subtotal;
+  const freeOver = shippingRule.freeShippingEnabled ? shippingRule.freeShippingThreshold : null;
 
   // Applying a code answers in the panel itself — a green line and a chip that
   // pops in, or a red line and one shake. A toast is the wrong place for it:
   // the field the customer is looking at is the thing that needs to react.
+  // The ERP's quote is the judge: a code it does not apply is not kept.
   const applyCoupon = async () => {
     const code = couponInput.trim().toUpperCase();
     if (!code) return;
@@ -215,33 +325,26 @@ export default function CheckoutPage() {
     setApplyingCoupon(true);
     const next = [...appliedCodes, code];
     try {
-      const res = await fetch("/api/discounts/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: liveItems.map((i) => ({ productId: i.productId, size: i.size, quantity: i.quantity })),
-          codes: next,
-          shippingFee: baseShipping,
-        }),
-      });
-      const d = await res.json();
-      setDiscountResult(d);
-      const rejected = (d.rejected || []).find((r) => r.code === code);
-      const applied = (d.applied || []).find((a) => a.code === code);
-      if (applied) {
+      const q = await requestQuote(next);
+      const verdict = (q?.codes || []).find((c) => c.code === code);
+      if (verdict?.applied) {
         setAppliedCodes(next);
+        setQuote(q);
         setCouponInput("");
-        const saved = applied.amount > 0
-          ? `you saved ${formatPrice(applied.amount)}`
-          : applied.freeShipping
+        const applied = (q.discounts || []).find((d) => d.code === code);
+        const amount = taka(applied?.amount);
+        const saved = amount > 0
+          ? `you saved ${formatPrice(amount)}`
+          : taka(applied?.deliveryAmount) > 0
           ? "delivery is on us"
           : "it's on your order";
         setCoupon({ ok: true, text: `${code} applied — ${saved}.`, nonce: Date.now() });
       } else {
+        const reason = verdict?.reason;
         setCoupon({
           ok: false,
-          text: rejected?.reason
-            ? `${code} — ${rejected.reason}`
+          text: reason
+            ? `${code} — ${CODE_REASONS[reason] || `${reason.replace(/_/g, " ")}.`}`
             : `We couldn't use ${code} on this order. Do check the spelling.`,
           nonce: Date.now(),
         });
@@ -250,7 +353,7 @@ export default function CheckoutPage() {
         requestAnimationFrame(() => couponRef.current?.select());
       }
     } catch {
-      setCoupon({ ok: false, text: "We couldn't reach the server just then. Try once more?", nonce: Date.now() });
+      setCoupon({ ok: false, text: "We couldn't reach the shop just then. Try once more?", nonce: Date.now() });
     } finally {
       setApplyingCoupon(false);
     }
@@ -260,36 +363,15 @@ export default function CheckoutPage() {
     setCoupon(null);
   };
 
-  const shippingZoneOptions = [
-    { value: "inside_dhaka", label: "Inside Dhaka", desc: "Gulshan, Dhanmondi, Mirpur, Uttara…", fee: zoneFees.inside_dhaka },
-    { value: "suburbs", label: "Suburbs", desc: "Savar, Gazipur, Narayanganj…", fee: zoneFees.suburbs },
-    { value: "outside_dhaka", label: "Outside Dhaka", desc: "Chittagong, Sylhet, Rajshahi…", fee: zoneFees.outside_dhaka },
-  ];
-
-  const enabledGateways = settings?.paymentGateways || {};
-  const paymentOptions = [
-    ...(enabledGateways.cod?.enabled
-      ? [{ value: "cod", label: "Cash on delivery", desc: "Pay the rider when your parcel arrives.", icon: Truck }]
-      : []),
-    ...(enabledGateways.sslcommerz?.enabled
-      ? [{ value: "sslcommerz", label: "Pay online", desc: "bKash, Nagad or card — through SSLCommerz.", icon: CreditCard }]
-      : []),
-  ];
-
-  // Never leave a method selected that the shop has since switched off.
-  useEffect(() => {
-    if (!paymentOptions.length) return;
-    if (!paymentOptions.some((o) => o.value === paymentMethod)) setPaymentMethod(paymentOptions[0].value);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings]);
+  // A line's name and size, for the ERP's refusals that only name SKUs.
+  const describeSku = (skuId) => {
+    const item = items.find((i) => i.skuId === skuId);
+    return item ? { name: item.name, size: item.size } : {};
+  };
 
   const onSubmit = async (data) => {
     if (liveItems.length === 0) {
-      toast.error("Your cart is empty");
-      return;
-    }
-    if (!paymentMethod) {
-      toast.error("Please choose how you'd like to pay");
+      toast.error("Your bag is empty");
       return;
     }
     // Something in the bag is already known to be gone. Ask first — an order
@@ -307,101 +389,156 @@ export default function CheckoutPage() {
       );
       return;
     }
+    if (!zone) {
+      setZoneError("Pick the zone your address falls in — it sets the delivery charge.");
+      zoneRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    setZoneError("");
+    if (!paymentMethod || !paymentOptions.length) {
+      toast.error("Please choose how you'd like to pay");
+      return;
+    }
+    if (paymentMethod === "sslcommerz" && !data.email) {
+      setError("email", { message: "Online payment needs an email — your receipt goes there" });
+      return;
+    }
+    if (!quote || quoting) {
+      toast("Updating your total — one moment…");
+      return;
+    }
+    if (!quote.deliverable) {
+      toast.error("We don't deliver to that zone yet. Please choose another.");
+      return;
+    }
 
     setPlacing(true);
     try {
-      // Last look at the shelves before we charge anyone. Stock can go in the
+      // Last look at the shelves before the order goes in. Stock can go in the
       // minutes it takes to fill in an address, and finding out here — with the
-      // basket still editable — is far kinder than a failed order.
+      // basket still editable — is far kinder than a refused order.
       const { changed } = await syncWithServer({ keepUnavailable: true });
       const moved = describeStockChanges(changed);
-      if (moved) {
-        showNotice(moved);
-        setPlacing(false);
+      if (moved || quote.unavailable?.length) {
+        showNotice(
+          moved || {
+            blocking: false,
+            title: "Your bag changed",
+            body: "Something in your bag changed since the total was worked out.",
+            hint: "Have a look at your order below and press Place order again.",
+          }
+        );
         return;
       }
 
-      const orderPayload = {
-        items: liveItems.map((i) => ({
-          productId: i.productId,
-          name: i.name,
-          image: i.image,
-          size: i.size,
-          price: i.price,
-          quantity: i.quantity,
-        })),
-        shippingAddress: {
-          name: data.name,
-          phone: data.phone,
-          email: data.email,
-          street: (data.address || "").trim(),
-          city: ZONE_CITY[shippingZone] || "Dhaka",
-          state: "",
-          postalCode: "",
-        },
-        guestEmail: !session ? data.email : undefined,
-        shippingZone,
-        paymentMethod,
-        discountCodes: appliedCodes,
-      };
-
-      const res = await fetch("/api/orders", {
+      // One key per press; a press retried after a dropped connection reuses it.
+      if (!pressKey.current) {
+        pressKey.current = newKey();
+        pressTracking.current = await checkoutTracking().catch(() => undefined);
+      }
+      const res = await fetch("/api/checkout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(orderPayload),
+        headers: { "Content-Type": "application/json", "Idempotency-Key": pressKey.current },
+        body: JSON.stringify({
+          lines,
+          contact: { name: data.name, phone: data.phone, email: data.email || undefined },
+          address: { zone, addressLine: data.addressLine },
+          codes: appliedCodes,
+          paymentMethod,
+          notes: data.notes || undefined,
+          locale: "en",
+          expected: {
+            totalPoisha: quote.total.poisha,
+            lines: quote.lines.map((l) => ({ skuId: l.skuId, unitPricePoisha: l.unitPrice.poisha })),
+          },
+          tracking: pressTracking.current,
+        }),
       });
-      const result = await res.json();
+      const result = await res.json().catch(() => ({}));
+      // Only a definitive answer ends this press: placed (2xx) or refused (4xx).
+      // A gateway timeout, a 5xx or "still being placed" may mean the order went
+      // in, so the next press reuses the key and gets that same order back.
+      const definitive = res.ok || (res.status >= 400 && res.status < 500 && result.code !== "IDEMPOTENCY_IN_FLIGHT");
+      if (definitive) pressKey.current = null;
 
       if (!res.ok) {
-        // 409 means the shop moved under us between that check and this write —
-        // someone else took the last one. Re-sync so the offending line is
-        // clamped or marked sold out, and say so on the page rather than in a
-        // toast the customer has to catch before it fades.
-        if (res.status === 409) {
-          const { changed } = await syncWithServer({ keepUnavailable: true });
+        if (result.code === "CART_REPRICED" && result.quote) {
+          // The ERP's fresh figures replace the old ones on screen; the shopper
+          // confirms them with another press.
+          setQuote(result.quote);
+          reconcile(
+            result.quote.lines.map((l) => ({
+              skuId: l.skuId,
+              status: "ok",
+              price: taka(l.unitPrice),
+              regularPrice: l.compareAt ? taka(l.compareAt) : null,
+              available: l.availableQty,
+            })),
+            { keepUnavailable: true }
+          );
+          showNotice({
+            blocking: false,
+            title: "Prices moved since you opened checkout",
+            body: "The total below is the new one.",
+            hint: "Have a look and press Place order again when you're happy with it.",
+          });
+        } else if (result.code === "OUT_OF_STOCK" && result.lines) {
+          // Someone else took the last one between our check and the order.
+          const changedLines = result.lines.map((l) => ({
+            skuId: l.skuId,
+            ...describeSku(l.skuId),
+            status: l.availableQty > 0 ? "limited" : "gone",
+            available: l.availableQty || 0,
+          }));
+          reconcile(changedLines, { keepUnavailable: true });
           showNotice(
-            describeStockChanges(changed) || {
+            describeStockChanges(changedLines) || {
               blocking: true,
               title: "Sorry — that just sold out",
               body: result.error || "One of the pieces in your bag went while you were checking out.",
               hint: "Take it out of the bag below, or swap it for something else you like — everything else is ready to go.",
             }
           );
+        } else if (result.code === "ORDER_PHONE_INVALID") {
+          setError("phone", { message: result.error || "That doesn't look like a mobile number — 11 digits starting 01" });
+        } else if (result.code === "CART_NOT_DELIVERABLE") {
+          setZoneError(result.error || "We don't deliver to that zone yet. Please choose another.");
         } else {
-          toast.error(result.error || "Failed to place order");
+          toast.error(result.error || "We couldn't place the order. Please try again.");
         }
         return;
       }
 
-      if (paymentMethod === "cod") {
-        // Hold the confirmation on screen for a beat before navigating. The
-        // order is already written; this is the moment the customer needs to
-        // see that it worked, and it covers the confirmation page's load.
-        setDone({ kind: "placed" });
-        clearCart();
-        setTimeout(() => router.push(`/order-confirmation/${result.orderId}`), 1150);
-        return;
-      }
-
-      if (paymentMethod === "sslcommerz") {
+      const order = result.order;
+      if (order.payment?.required) {
+        // Online payment: the ERP opens SSLCommerz's page for this order.
         setDone({ kind: "redirect" });
         const payRes = await fetch("/api/payment/sslcommerz/init", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderId: result.orderId }),
+          body: JSON.stringify({ orderNo: order.orderNo }),
         });
-        const payData = await payRes.json();
-        if (payData.GatewayPageURL) {
-          clearCart();
-          window.location.href = payData.GatewayPageURL;
-          return;
+        const pay = await payRes.json().catch(() => ({}));
+        clearCart();
+        if (payRes.ok && pay.gatewayUrl) {
+          window.location.href = pay.gatewayUrl;
+        } else {
+          toast.error(pay.error || "The payment page could not be opened. You can pay from your order page.");
+          router.push(`/order-confirmation/${order.orderNo}`);
         }
-        setDone(null);
-        toast.error("Failed to initiate payment. Please try again.");
+        return;
       }
-    } catch (err) {
+
+      // Hold the confirmation on screen for a beat before navigating. The
+      // order is already placed; this is the moment the customer needs to see
+      // that it worked, and it covers the confirmation page's load.
+      setDone({ kind: "placed" });
+      clearCart();
+      setTimeout(() => router.push(`/order-confirmation/${order.orderNo}`), 1150);
+    } catch {
+      // The connection dropped: the key is kept, so pressing again is safe.
       setDone(null);
-      toast.error("Something went wrong. Please try again.");
+      toast.error("Connection lost. Please press Place order again — you won't be charged twice.");
     } finally {
       setPlacing(false);
     }
@@ -437,6 +574,15 @@ export default function CheckoutPage() {
     );
   }
 
+  // The bag is read from this browser's storage after the first paint.
+  if (!cartMounted) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
   // Reaching checkout with an empty bag is a dead end, so it gets the same
   // card, disc and tone as the bag's own empty state rather than a bare
   // heading floating in the middle of the page.
@@ -461,7 +607,16 @@ export default function CheckoutPage() {
     );
   }
 
-  const canPlace = !placing && !blocked && liveItems.length > 0;
+  const canPlace = !placing && !blocked && liveItems.length > 0 && paymentOptions.length > 0;
+  const deliveryLabel = !zone
+    ? "Pick a zone"
+    : quoting && !priced
+    ? "…"
+    : !quote?.deliverable
+    ? "—"
+    : freeDelivery
+    ? "Free"
+    : formatPrice(delivery);
 
   return (
     <div className="min-h-screen bg-paper pb-[104px] pt-5 md:pt-8 lg:pb-14">
@@ -473,8 +628,8 @@ export default function CheckoutPage() {
           </p>
         </div>
 
-        {/* Stock news lands here — above the fold on every screen size, in the
-            page rather than in a toast, because it needs an answer. */}
+        {/* Stock and price news lands here — above the fold on every screen
+            size, in the page rather than in a toast, because it needs an answer. */}
         {notice && (!notice.blocking || blocked) && (
           <div
             ref={noticeRef}
@@ -533,6 +688,7 @@ export default function CheckoutPage() {
         <form
           id="checkout-form"
           onSubmit={handleSubmit(onSubmit)}
+          noValidate
           className="grid grid-cols-1 gap-5 lg:grid-cols-12 lg:items-start lg:gap-8 xl:gap-10"
         >
           {/* ── Left: who, where, how ──────────────────────────────────────── */}
@@ -542,6 +698,29 @@ export default function CheckoutPage() {
               subtitle="A name, a number the rider can call, and the address."
               icon={MapPin}
             >
+              {/* A signed-in shopper's addresses, kept in their account. */}
+              {saved.length > 0 && (
+                <div className="mb-5">
+                  <p className="mb-2 text-[14px] font-medium text-ink">Saved addresses</p>
+                  <div className="flex flex-wrap gap-2">
+                    {saved.map((a) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => fillAddress(a)}
+                        aria-pressed={savedChoice === a.id}
+                        className={`chip max-w-full ${savedChoice === a.id ? "chip-active" : ""}`}
+                      >
+                        <span className="truncate">
+                          {a.label ? `${a.label} — ` : ""}
+                          {a.addressLine}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="sm:col-span-2">
                   <Input
@@ -549,6 +728,7 @@ export default function CheckoutPage() {
                     {...register("name", { required: "Please tell us who to address it to" })}
                     error={errors.name?.message}
                     placeholder="Your full name"
+                    autoComplete="name"
                   />
                 </div>
                 {/* Bangla digits, +880, spaces, dashes — all of it is the
@@ -571,10 +751,12 @@ export default function CheckoutPage() {
                   )}
                 </div>
                 <Input
-                  label="Email address"
+                  label={paymentMethod === "sslcommerz" ? "Email address *" : "Email address"}
                   type="email"
                   inputMode="email"
+                  autoComplete="email"
                   {...register("email")}
+                  error={errors.email?.message}
                   placeholder="your@email.com"
                 />
 
@@ -583,92 +765,113 @@ export default function CheckoutPage() {
                     half-width fields on a phone had people writing the same
                     line twice. */}
                 <div className="sm:col-span-2">
-                  <label className="mb-2 block text-[14px] font-medium text-ink" htmlFor="address">
+                  <label className="mb-2 block text-[14px] font-medium text-ink" htmlFor="field-addressLine">
                     Delivery address *
                   </label>
                   <textarea
-                    id="address"
+                    id="field-addressLine"
                     rows={4}
-                    {...register("address", {
+                    maxLength={500}
+                    autoComplete="street-address"
+                    {...register("addressLine", {
                       required: "We'll need an address to deliver to",
                       minLength: { value: 12, message: "A little more detail, please — enough for a rider to find you" },
                     })}
                     placeholder={"House / flat, road, area, city — and any landmark that helps.\ne.g. Flat 4B, House 12, Road 7, Banani — beside Banani Bidyaniketan, Dhaka"}
                     className={`input-base resize-y leading-relaxed ${
-                      errors.address ? "border-signal focus:border-signal focus:ring-signal/15" : ""
+                      errors.addressLine ? "border-signal focus:border-signal focus:ring-signal/15" : ""
                     }`}
                   />
-                  {errors.address ? (
-                    <p className="mt-1.5 text-[13px] text-signal">{errors.address.message}</p>
+                  {errors.addressLine ? (
+                    <p className="mt-1.5 text-[13px] text-signal">{errors.addressLine.message}</p>
                   ) : (
                     <p className="mt-1.5 text-[13px] leading-snug text-smoke">
                       Write it the way you would say it out loud — the whole thing in this one box.
                     </p>
                   )}
                 </div>
+
+                <div className="sm:col-span-2">
+                  <Input
+                    label="Order notes"
+                    {...register("notes")}
+                    placeholder="Anything the rider should know"
+                    maxLength={1000}
+                  />
+                </div>
               </div>
             </Panel>
 
-            <Panel
-              title="Delivery zone"
-              subtitle="This sets the delivery charge, so pick the one your address falls in."
-              icon={Truck}
-            >
-              <div className="grid gap-3 sm:grid-cols-3">
-                {shippingZoneOptions.map((opt) => {
-                  const active = shippingZone === opt.value;
-                  return (
-                    <label key={opt.value} className="press relative block cursor-pointer">
-                      <input
-                        type="radio"
-                        name="shippingZone"
-                        value={opt.value}
-                        checked={active}
-                        onChange={() => setShippingZone(opt.value)}
-                        className="peer sr-only"
-                      />
-                      {/* Ring, not border width: a selected tile must not be a
-                          pixel bigger than an unselected one, or the row jumps
-                          every time you change your mind. */}
-                      <div
-                        className={`flex h-full flex-col rounded-3xl p-4 ring-2 ring-inset transition-[background-color,color,box-shadow] duration-base ease-swift peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-paper-pure ${
-                          active
-                            ? "bg-ink text-paper-pure ring-ink"
-                            : "bg-haze text-ink ring-transparent hover:ring-haze-dark"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-[15px] font-semibold tracking-[-0.02em]">{opt.label}</p>
-                          <span
-                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors duration-fast ease-swift ${
-                              active ? "bg-beam text-ink" : "bg-paper-pure text-transparent"
-                            }`}
-                          >
-                            <Check size={12} strokeWidth={3.2} />
-                          </span>
-                        </div>
-                        <p className={`mt-1 text-[12.5px] leading-snug ${active ? "text-white/55" : "text-smoke"}`}>
-                          {opt.desc}
-                        </p>
-                        <p
-                          className={`mt-3 text-[15px] font-bold tabular-nums tracking-[-0.02em] ${
-                            shippingIsFree ? (active ? "text-beam" : "text-emerald-600") : ""
+            <div ref={zoneRef}>
+              <Panel
+                title="Delivery zone *"
+                subtitle="This sets the delivery charge, so pick the one your address falls in."
+                icon={Truck}
+              >
+                <div className="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Delivery zone">
+                  {ZONE_OPTIONS.map((opt) => {
+                    const active = zone === opt.value;
+                    // The fee from the ERP's Website → Settings, or the quote's
+                    // own figure once this zone is the one priced.
+                    const fee = active && priced && !quoting ? delivery : shippingRule.zones?.[opt.value];
+                    const free = !!quote?.freeShipping || (typeof fee === "number" && fee === 0);
+                    return (
+                      <label key={opt.value} className="press relative block cursor-pointer">
+                        <input
+                          type="radio"
+                          name="deliveryZone"
+                          value={opt.value}
+                          checked={active}
+                          onChange={() => { setZone(opt.value); setZoneError(""); }}
+                          className="peer sr-only"
+                        />
+                        {/* Ring, not border width: a selected tile must not be a
+                            pixel bigger than an unselected one, or the row jumps
+                            every time you change your mind. */}
+                        <div
+                          className={`flex h-full flex-col rounded-3xl p-4 ring-2 ring-inset transition-[background-color,color,box-shadow] duration-base ease-swift peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-paper-pure ${
+                            active
+                              ? "bg-ink text-paper-pure ring-ink"
+                              : zoneError
+                              ? "bg-haze text-ink ring-signal/60"
+                              : "bg-haze text-ink ring-transparent hover:ring-haze-dark"
                           }`}
                         >
-                          {shippingIsFree ? "Free" : formatPrice(opt.fee)}
-                        </p>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-              {!shippingIsFree && freeThreshold > 0 && subtotal < freeThreshold && (
-                <p className="mt-3.5 inline-flex items-center gap-2 rounded-full bg-beam-soft px-3.5 py-2 text-[12.5px] font-medium text-ink">
-                  <Tag size={13} strokeWidth={2.4} />
-                  {formatPrice(freeThreshold - subtotal)} more and delivery is on us
-                </p>
-              )}
-            </Panel>
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-[15px] font-semibold tracking-[-0.02em]">{opt.label}</p>
+                            <span
+                              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors duration-fast ease-swift ${
+                                active ? "bg-beam text-ink" : "bg-paper-pure text-transparent"
+                              }`}
+                            >
+                              <Check size={12} strokeWidth={3.2} />
+                            </span>
+                          </div>
+                          <p className={`mt-1 text-[12.5px] leading-snug ${active ? "text-white/55" : "text-smoke"}`}>
+                            {opt.desc}
+                          </p>
+                          <p
+                            className={`mt-3 text-[15px] font-bold tabular-nums tracking-[-0.02em] ${
+                              free ? (active ? "text-beam" : "text-emerald-600") : ""
+                            }`}
+                            data-testid={active ? "delivery-fee" : undefined}
+                          >
+                            {free ? "Free" : typeof fee === "number" ? formatPrice(fee) : ""}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+                {zoneError && <p className="mt-3 text-[13px] text-signal">{zoneError}</p>}
+                {!quote?.freeShipping && freeOver > 0 && itemsTotal < freeOver && (
+                  <p className="mt-3.5 inline-flex items-center gap-2 rounded-full bg-beam-soft px-3.5 py-2 text-[12.5px] font-medium text-ink">
+                    <Tag size={13} strokeWidth={2.4} />
+                    {formatPrice(freeOver - itemsTotal)} more and delivery is on us
+                  </p>
+                )}
+              </Panel>
+            </div>
 
             <Panel title="How would you like to pay?" icon={ShieldCheck}>
               {paymentOptions.length === 0 ? (
@@ -750,11 +953,19 @@ export default function CheckoutPage() {
                     margins, so the rhythm holds however long a name runs. The
                     list only scrolls on the desktop sticky panel — on a phone
                     it is simply part of the page, so a stepper never fights
-                    the scroll. */}
+                    the scroll. Figures are the quote's own when it has them. */}
                 <ul className="divide-y divide-haze-dark lg:max-h-[38vh] lg:overflow-y-auto">
                   {items.map((item) => {
                     const out = !!item.unavailable;
                     const atMax = typeof item.maxStock === "number" && item.quantity >= item.maxStock;
+                    const line = quote?.lines?.find((l) => l.skuId === item.skuId);
+                    const unit = line ? taka(line.unitPrice) : item.price;
+                    const lineTotal = line ? taka(line.lineTotal) : item.price * item.quantity;
+                    const shelf = line?.compareAt
+                      ? taka(line.compareAt) * item.quantity
+                      : item.regularPrice
+                      ? item.regularPrice * item.quantity
+                      : null;
                     return (
                       <li key={`${item.productId}-${item.size}`} className="flex gap-3.5 py-4 sm:gap-4">
                         <Link
@@ -764,10 +975,10 @@ export default function CheckoutPage() {
                           }`}
                         >
                           <Image
-                            src={item.image || "/placeholder.jpg"}
+                            src={item.image || PLACEHOLDER_IMAGE}
                             alt={item.name}
                             fill
-                            unoptimized={shouldUnoptimizeImage(item.image)}
+                            unoptimized={shouldUnoptimizeImage(item.image || PLACEHOLDER_IMAGE)}
                             className="object-cover object-center"
                             sizes="(min-width: 640px) 78px, 72px"
                           />
@@ -780,7 +991,7 @@ export default function CheckoutPage() {
                                 {item.name}
                               </p>
                               <p className="mt-1 text-[12.5px] text-smoke">
-                                Size {item.size} · {formatPrice(item.price)} each
+                                Size {item.size} · {formatPrice(unit)} each
                               </p>
                             </div>
                             <button
@@ -831,8 +1042,15 @@ export default function CheckoutPage() {
                                 </button>
                               </div>
                               {atMax && <span className="text-[12px] text-smoke">{item.maxStock} left</span>}
-                              <span className="ml-auto text-[15px] font-bold tabular-nums tracking-[-0.02em] text-ink">
-                                {formatPrice(item.price * item.quantity)}
+                              <span className="ml-auto flex flex-col items-end leading-tight">
+                                {shelf > lineTotal && <WasPrice amount={shelf} className="text-[12px]" />}
+                                <span
+                                  className={`text-[15px] font-bold tabular-nums tracking-[-0.02em] ${
+                                    shelf > lineTotal ? "text-signal" : "text-ink"
+                                  }`}
+                                >
+                                  {formatPrice(lineTotal)}
+                                </span>
                               </span>
                             </div>
                           )}
@@ -844,7 +1062,8 @@ export default function CheckoutPage() {
               </div>
 
               {/* Coupon — in its own tinted well, so the field is not sitting
-                  on a hairline it looks glued to. */}
+                  on a hairline it looks glued to. The ERP decides whether a
+                  code applies. */}
               <div className="px-5 pb-5 sm:px-6 sm:pb-6">
                 <div className="rounded-3xl bg-haze p-3.5">
                   <div
@@ -861,6 +1080,7 @@ export default function CheckoutPage() {
                       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyCoupon(); } }}
                       placeholder="Coupon code"
                       aria-label="Coupon code"
+                      maxLength={40}
                       className={`h-11 min-w-0 flex-1 rounded-full border bg-paper-pure px-4 text-[14px] uppercase tracking-[0.04em] text-ink placeholder-smoke-light transition-colors duration-fast ease-swift focus:outline-none ${
                         coupon && !coupon.ok ? "border-signal" : "border-transparent focus:border-ink"
                       }`}
@@ -912,17 +1132,25 @@ export default function CheckoutPage() {
                       ))}
                     </div>
                   )}
+
+                  {/* Discounts the shop applies by itself (the ERP's automatic offers). */}
+                  {(quote?.discounts || []).filter((d) => d.automatic).map((d) => (
+                    <p key={d.title} className="mt-2.5 flex items-start gap-1.5 px-1 text-[12.5px] leading-snug text-emerald-700">
+                      <Check size={13} strokeWidth={3} className="mt-0.5 shrink-0" />
+                      {d.title} applied
+                    </p>
+                  ))}
                 </div>
               </div>
 
               {/* Totals and the button, on the dark ground the bag already
                   uses. The order stops being a list here and becomes an
-                  amount. */}
+                  amount — the ERP's quote, to the poisha. */}
               <div className="bg-ink p-6 text-paper-pure sm:p-7">
                 <dl className="space-y-3 text-[14.5px]">
                   <div className="flex justify-between gap-4">
                     <dt className="text-white/50">Subtotal</dt>
-                    <dd className="tabular-nums">{formatPrice(subtotal)}</dd>
+                    <dd className="tabular-nums" data-testid="quote-items">{formatPrice(itemsTotal)}</dd>
                   </div>
                   {discountTotal > 0 && (
                     <div className="flex justify-between gap-4">
@@ -931,9 +1159,9 @@ export default function CheckoutPage() {
                     </div>
                   )}
                   <div className="flex justify-between gap-4">
-                    <dt className="text-white/50">Delivery{freeShip ? " (coupon)" : ""}</dt>
-                    <dd className={shipping === 0 ? "font-semibold text-beam" : "tabular-nums"}>
-                      {shipping === 0 ? "Free" : formatPrice(shipping)}
+                    <dt className="text-white/50">Delivery{deliveryCoupon ? " (coupon)" : ""}</dt>
+                    <dd className={zone && freeDelivery ? "font-semibold text-beam" : "tabular-nums"}>
+                      {deliveryLabel}
                     </dd>
                   </div>
                 </dl>
@@ -942,7 +1170,7 @@ export default function CheckoutPage() {
 
                 <div className="flex items-end justify-between gap-4">
                   <span className="text-[14.5px] text-white/50">Total</span>
-                  <span className="text-[30px] font-bold leading-none tracking-[-0.03em] tabular-nums">
+                  <span className="text-[30px] font-bold leading-none tracking-[-0.03em] tabular-nums" data-testid="quote-total">
                     {formatPrice(total)}
                   </span>
                 </div>
@@ -994,7 +1222,11 @@ export default function CheckoutPage() {
         <div className="container-custom flex items-center gap-4 py-3">
           <div className="min-w-0 flex-1">
             <p className="text-[12.5px] text-smoke">
-              {blocked ? "One item needs a look" : `Total${shipping === 0 ? " · free delivery" : ""}`}
+              {blocked
+                ? "One item needs a look"
+                : !zone
+                ? "Total · pick a delivery zone"
+                : `Total${freeDelivery ? " · free delivery" : ""}`}
             </p>
             <p className="text-[19px] font-bold leading-tight tracking-[-0.03em] tabular-nums text-ink">
               {formatPrice(total)}

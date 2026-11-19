@@ -44,6 +44,14 @@ public/tsconfig.json
 !.vscode/tasks.json
 public/uploads/*
 /.claude
+.env.demo.local
 .env
 
-.env
+
+# end-to-end run (local state, mail sink certificate, reports)
+/e2e/.state/
+/e2e/.mail-sink/
+/e2e/.report/
+/e2e/.results/
+/e2e/.*.sh
+.env.e2e.local

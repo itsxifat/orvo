@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import Wordmark from "@/components/brand/Wordmark";
 import AuthBackdrop from "@/components/auth/AuthBackdrop";
+import { useSettings } from "@/context/SettingsContext";
 
 // The frame every auth screen sits in.
 //
@@ -16,6 +17,10 @@ import AuthBackdrop from "@/components/auth/AuthBackdrop";
 //   wide      widen the content column for longer forms
 
 export default function AuthShell({ aside, children, wide = false }) {
+  // The shop's name as staff set it on the ERP's Website → Settings.
+  const { settings } = useSettings();
+  const siteName = settings?.siteInfo?.siteName || "Orvo";
+
   return (
     <div className="relative min-h-screen flex flex-col bg-paper overflow-hidden">
 
@@ -23,7 +28,7 @@ export default function AuthShell({ aside, children, wide = false }) {
 
       {/* ── Top edge ────────────────────────────────────────────────────────*/}
       <header className="relative z-10 container-custom py-6 sm:py-7 flex items-center justify-between gap-4">
-        <Link href="/" aria-label="Orvo home">
+        <Link href="/" aria-label={`${siteName} home`}>
           <Wordmark size="md" />
         </Link>
 
@@ -53,7 +58,7 @@ export default function AuthShell({ aside, children, wide = false }) {
 
       {/* ── Bottom edge ─────────────────────────────────────────────────────*/}
       <footer className="relative z-10 container-custom py-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <p className="text-[13px] text-smoke">© {new Date().getFullYear()} Orvo</p>
+        <p className="text-[13px] text-smoke">© {new Date().getFullYear()} {siteName}</p>
         <nav className="flex items-center gap-5 text-[13px] text-smoke">
           <Link href="/privacy" className="hover:text-ink transition-colors">Privacy</Link>
           <Link href="/terms" className="hover:text-ink transition-colors">Terms</Link>

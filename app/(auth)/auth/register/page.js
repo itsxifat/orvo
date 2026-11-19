@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { signIn } from "next-auth/react";
+import { signIn, getProviders } from "next-auth/react";
 import { useForm } from "react-hook-form";
 import { bdPhoneField } from "@/lib/phone-field";
 import toast from "react-hot-toast";
@@ -12,10 +12,20 @@ import {
   AuthHeading, Field, PasswordField, GoogleButton, Divider, SubmitButton, AuthFootLink,
 } from "@/components/auth/fields";
 
+// Sign-up goes to the brand ERP (app/api/auth/register): it keeps the account
+// and emails a six-digit code, typed on /auth/verify-email. Passwords follow
+// the ERP's rule: at least eight characters.
+const MIN_PASSWORD = 8;
+
 export default function RegisterPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  // Google is offered only when this deploy has a Google OAuth client.
+  const [google, setGoogle] = useState(false);
+  useEffect(() => {
+    getProviders().then((p) => setGoogle(!!p?.google)).catch(() => {});
+  }, []);
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm();
 
@@ -32,7 +42,7 @@ export default function RegisterPage() {
           phone: data.phone,
         }),
       });
-      const result = await res.json();
+      const result = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         toast.error(result.error || "Could not create your account");
@@ -63,9 +73,12 @@ export default function RegisterPage() {
         It takes about a minute.
       </AuthHeading>
 
-      <GoogleButton loading={googleLoading} onClick={handleGoogle} label="Sign up with Google" />
-
-      <Divider>or with email</Divider>
+      {google && (
+        <>
+          <GoogleButton loading={googleLoading} onClick={handleGoogle} label="Sign up with Google" />
+          <Divider>or with email</Divider>
+        </>
+      )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <Field
@@ -85,8 +98,8 @@ export default function RegisterPage() {
           {...register("email", { required: "Enter your email address" })}
         />
 
-        {/* Optional, but it's how we find orders you already placed as a guest
-            and attach them to this account. */}
+        {/* Optional, but past orders placed with this number or email join the
+            account once the email is verified. */}
         <Field
           label="Mobile number"
           placeholder="01XXXXXXXXX"
@@ -97,12 +110,12 @@ export default function RegisterPage() {
 
         <PasswordField
           label="Password"
-          placeholder="At least 6 characters"
+          placeholder={`At least ${MIN_PASSWORD} characters`}
           autoComplete="new-password"
           error={errors.password?.message}
           {...register("password", {
             required: "Choose a password",
-            minLength: { value: 6, message: "Use at least 6 characters" },
+            minLength: { value: MIN_PASSWORD, message: `Use at least ${MIN_PASSWORD} characters` },
           })}
         />
 

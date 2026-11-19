@@ -1,18 +1,35 @@
-import { getSiteInfo } from "@/lib/getSiteInfo";
+import Link from "next/link";
+import { SITE_URL, pageMetadata } from "@/lib/seo";
+import { getSite, getSiteInfo } from "@/lib/storefront";
 import { telHref } from "@/lib/siteInfo";
+import { formatPrice } from "@/lib/utils";
 
-export const metadata = {
-  title: "Terms & Conditions — Orvo",
+// The title takes the shop's name from the layout's template (the ERP's
+// Website → Settings); the canonical address and share text come with it
+// (lib/seo.js).
+export const metadata = pageMetadata({
+  title: "Terms & Conditions",
   description: "Orvo's terms and conditions governing the use of our website and services.",
-};
+  path: "/terms",
+});
 
-// Re-read settings on each request so contact details stay in sync with admin.
+// Contact details, the delivery rule and the payment methods come from the
+// brand ERP (Website → Settings) on each request.
 export const dynamic = "force-dynamic";
 
 const LAST_UPDATED = "1 May 2025";
 
+// The site's own address, as it is served (NEXT_PUBLIC_SITE_URL).
+const HOST = SITE_URL.replace(/^https?:\/\//, "");
+
 export default async function TermsPage() {
-  const { phone, email, address } = await getSiteInfo();
+  const [{ phone, email, address }, site] = await Promise.all([getSiteInfo(), getSite()]);
+  const { shipping, paymentGateways } = site;
+  const freeOver = shipping?.freeShippingEnabled && shipping.freeShippingThreshold ? shipping.freeShippingThreshold : null;
+  const methods = [
+    paymentGateways?.sslcommerz?.enabled ? "SSLCommerz (bKash, Cards)" : null,
+    paymentGateways?.cod?.enabled !== false ? "Cash on Delivery (COD)" : null,
+  ].filter(Boolean);
   return (
     <div className="bg-white min-h-screen">
       {/* Header */}
@@ -31,7 +48,7 @@ export default async function TermsPage() {
 
             <section>
               <p className="text-ink/60 text-[14px] leading-relaxed">
-                Welcome to Orvo. By accessing or using our website (orvo.com) or placing an order, you agree to be bound by these Terms and Conditions. Please read them carefully before making a purchase.
+                Welcome to Orvo. By accessing or using our website ({HOST}) or placing an order, you agree to be bound by these Terms and Conditions. Please read them carefully before making a purchase.
               </p>
             </section>
 
@@ -52,30 +69,37 @@ export default async function TermsPage() {
               <ul>
                 <li>Placing an order constitutes an offer to purchase. We reserve the right to accept or decline any order.</li>
                 <li>An order confirmation email confirms acceptance. The sale is complete when the order is dispatched.</li>
-                <li>We accept payment via SSLCommerz (bKash, Cards) and Cash on Delivery (COD), subject to availability.</li>
+                <li>We accept payment via {methods.join(" and ") || "Cash on Delivery (COD)"}, subject to availability.</li>
                 <li>For COD orders, payment is collected upon delivery. Please ensure the correct amount is available.</li>
                 <li>We reserve the right to cancel orders if payment cannot be verified or if we suspect fraud.</li>
               </ul>
             </LegalSection>
 
-            <LegalSection title="4. Shipping and Delivery">
+            <LegalSection id="shipping" title="4. Shipping and Delivery">
               <ul>
                 <li>We deliver across all 64 districts of Bangladesh.</li>
                 <li>Standard delivery takes 3–7 business days depending on your location.</li>
                 <li>Delivery times are estimates and are not guaranteed. We are not liable for delays caused by courier services or circumstances beyond our control.</li>
-                <li>Free shipping is available on orders over Tk 1,500. A standard shipping fee applies to smaller orders.</li>
+                {freeOver ? (
+                  <li>Free shipping is available on orders over {formatPrice(freeOver)}. A standard shipping fee applies to smaller orders; see our <Link href="/shipping">Shipping &amp; Delivery</Link> page.</li>
+                ) : (
+                  <li>A shipping fee applies to every order, shown at checkout; see our <Link href="/shipping">Shipping &amp; Delivery</Link> page for the fees.</li>
+                )}
                 <li>Risk of loss and title for items pass to you upon delivery.</li>
               </ul>
             </LegalSection>
 
-            <LegalSection title="5. Returns and Exchanges">
+            <LegalSection id="returns" title="5. Returns and Exchanges">
               <ul>
                 <li>We accept returns within 7 days of delivery for unused, unwashed items in original packaging with tags attached.</li>
                 <li>Sale items, innerwear, and customised products are non-returnable.</li>
-                <li>To initiate a return, contact us at <a href={`mailto:${email}`}>{email}</a> with your order number and reason.</li>
+                <li>To initiate a return, contact us{email && <> at <a href={`mailto:${email}`}>{email}</a></>} with your order number and reason.</li>
                 <li>Refunds are processed within 5–7 business days after we receive and inspect the returned item.</li>
                 <li>Shipping costs for returns are borne by the customer unless the item is defective or incorrect.</li>
               </ul>
+              <p>
+                See our <Link href="/returns">Returns &amp; Exchanges</Link> page for how to send an item back.
+              </p>
             </LegalSection>
 
             <LegalSection title="6. User Accounts">
@@ -103,7 +127,7 @@ export default async function TermsPage() {
 
             <LegalSection title="9. Privacy">
               <p>
-                Your use of our website is also governed by our <a href="/privacy" className="text-signal hover:underline">Privacy Policy</a>, which is incorporated into these Terms by reference.
+                Your use of our website is also governed by our <Link href="/privacy" className="hover:underline">Privacy Policy</Link>, which is incorporated into these Terms by reference.
               </p>
             </LegalSection>
 
@@ -122,8 +146,8 @@ export default async function TermsPage() {
             <LegalSection title="12. Contact Us">
               <p>If you have questions about these Terms, please contact us:</p>
               <ul>
-                <li>Email: <a href={`mailto:${email}`}>{email}</a></li>
-                <li>Phone: <a href={telHref(phone)}>{phone}</a></li>
+                {email && (<li>Email: <a href={`mailto:${email}`}>{email}</a></li>)}
+                {phone && (<li>Phone: <a href={telHref(phone)}>{phone}</a></li>)}
                 <li>Address: {address}</li>
               </ul>
             </LegalSection>
@@ -135,9 +159,9 @@ export default async function TermsPage() {
   );
 }
 
-function LegalSection({ title, children }) {
+function LegalSection({ id, title, children }) {
   return (
-    <section>
+    <section id={id} className="scroll-mt-[calc(var(--header-h)+24px)]">
       <h2 className="text-xl font-semibold text-ink mb-4 pb-2 border-b border-smoke/15">{title}</h2>
       <div className="space-y-3 text-ink/70 text-[14px] leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-2 [&_strong]:text-ink [&_strong]:font-semibold [&_a]:text-signal">
         {children}

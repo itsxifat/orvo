@@ -9,6 +9,13 @@ const variants = {
   processing: "bg-blue-50 text-blue-700",
   shipped: "bg-indigo-50 text-indigo-700",
   delivered: "bg-emerald-50 text-emerald-700",
+  // The states after delivery where something came back or was swapped, in
+  // their own colour family so "coming back" never reads as delivered-green or
+  // cancelled-red at a glance (lib/order-status.js).
+  partly_delivered: "bg-orange-50 text-orange-800",
+  returned: "bg-haze text-smoke-dark",
+  exchanged: "bg-amber-50 text-amber-900",
+  refund_due: "bg-orange-50 text-orange-800",
   cancelled: "bg-signal-soft text-signal-dark",
   paid: "bg-emerald-50 text-emerald-700",
   failed: "bg-signal-soft text-signal-dark",

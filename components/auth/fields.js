@@ -32,20 +32,26 @@ export function AuthHeading({ title, children }) {
 const fieldBase =
   "w-full rounded-2xl border bg-paper-pure px-5 py-3.5 text-[15px] text-ink placeholder-smoke-light transition-all duration-200 focus:outline-none focus:ring-2";
 
+// Tie a label to its field so it is the field's accessible name.
+const fieldId = (props) => props.id || (props.name ? `field-${props.name}` : undefined);
+
 export const Field = forwardRef(function Field(
   { label, hint, error, action, className, ...props },
   ref
 ) {
+  const id = fieldId(props);
   return (
     <div>
       {(label || action) && (
         <div className="flex items-baseline justify-between mb-2">
-          {label && <label className="text-[14px] font-medium text-ink">{label}</label>}
+          {label && <label htmlFor={id} className="text-[14px] font-medium text-ink">{label}</label>}
           {action}
         </div>
       )}
       <input
         ref={ref}
+        id={id}
+        aria-invalid={error ? true : undefined}
         className={cn(
           fieldBase,
           error
@@ -69,15 +75,18 @@ export const PasswordField = forwardRef(function PasswordField(
   ref
 ) {
   const [show, setShow] = useState(false);
+  const id = fieldId(props);
   return (
     <div>
       <div className="flex items-baseline justify-between mb-2">
-        {label && <label className="text-[14px] font-medium text-ink">{label}</label>}
+        {label && <label htmlFor={id} className="text-[14px] font-medium text-ink">{label}</label>}
         {action}
       </div>
       <div className="relative">
         <input
           ref={ref}
+          id={id}
+          aria-invalid={error ? true : undefined}
           type={show ? "text" : "password"}
           className={cn(
             fieldBase,

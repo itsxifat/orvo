@@ -57,8 +57,8 @@ module.exports = {
       fontFamily: {
         // One family, used across the whole site. Weight and tracking carry the
         // hierarchy instead of a second condensed face.
-        sans: ["var(--font-saira)", "system-ui", "Segoe UI", "Arial", "sans-serif"],
-        display: ["var(--font-saira)", "system-ui", "Segoe UI", "Arial", "sans-serif"],
+        sans: ["Saira Variable", "system-ui", "Segoe UI", "Arial", "sans-serif"],
+        display: ["Saira Variable", "system-ui", "Segoe UI", "Arial", "sans-serif"],
       },
       borderRadius: {
         "4xl": "2rem",

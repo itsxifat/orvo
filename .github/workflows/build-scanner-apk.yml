@@ -2,7 +2,7 @@ name: Build scanner APK
 
 # Builds the native Android scanner app and publishes the signed APK to
 # public/app/orvo-scanner.apk so the site serves it at /app/orvo-scanner.apk
-# and the "Install" button on /admin/scan can hand it to staff phones.
+# for staff phones (the scanner signs in to the brand ERP at erp.orvo.bd).
 #
 # Run it manually from the Actions tab (Run workflow), or it runs automatically
 # when anything under scanner-app/ changes.

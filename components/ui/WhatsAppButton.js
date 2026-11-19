@@ -5,7 +5,14 @@ import { useSettings } from "@/context/SettingsContext";
 // A round black pill that widens into a label on hover.
 export default function WhatsAppButton() {
   const { settings } = useSettings();
-  const number = settings?.siteInfo?.whatsappNumber || "8801700000000";
+  // The number staff set on the ERP's Website → Settings (digits only), else
+  // the build's fallback; no number, no button.
+  const number = settings?.siteInfo?.whatsappNumber || process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "";
+  if (!number) return null;
+
+  // On a phone the product page's buy bar (data-buybar on <body>, set by
+  // components/product/MobileBuyBar.js while it shows) sits at the bottom; the
+  // button moves up above it.
 
   return (
     <a
@@ -13,7 +20,7 @@ export default function WhatsAppButton() {
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Chat on WhatsApp"
-      className="group fixed bottom-6 right-6 z-40 flex items-center h-14 rounded-full bg-ink text-paper-pure shadow-pop hover:bg-ink-soft transition-colors"
+      className="group fixed bottom-6 right-6 z-40 flex items-center h-14 rounded-full bg-ink text-paper-pure shadow-pop hover:bg-ink-soft transition-[background-color,bottom] duration-200 max-lg:[body[data-buybar]_&]:bottom-[96px]"
     >
       <span className="w-14 h-14 flex items-center justify-center shrink-0">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-[22px] h-[22px]">

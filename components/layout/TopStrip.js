@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Truck, RefreshCw, Sparkles, ArrowUpRight } from "lucide-react";
+import { useSettings } from "@/context/SettingsContext";
 
 // The strip above the navbar.
 //
@@ -11,14 +12,27 @@ import { Truck, RefreshCw, Sparkles, ArrowUpRight } from "lucide-react";
 // instead of decorating it. The navbar slides it out of view as soon as you
 // scroll, so it is only ever present at the top of the page.
 //
-// When the admin sets an announcement it takes over the whole strip as a single
-// yellow pill — a real message reads differently from the standing promises.
+// When staff switch on an announcement in the ERP (Website → Settings) it takes
+// over the whole strip as a single yellow pill — a real message reads
+// differently from the standing promises.
 
-const PROMISES = [
-  { Icon: Truck, label: "Free delivery over Tk 1500", href: "/shipping" },
-  { Icon: RefreshCw, label: "7-day easy exchange", href: "/returns" },
-  { Icon: Sparkles, label: "New drops every Thursday", href: "/shop?newArrival=true" },
-];
+/** "Tk 1,500" from the ERP's free-delivery threshold (whole taka, display only). */
+function takaLabel(amount) {
+  const n = Number(amount);
+  return `Tk ${(Number.isFinite(n) ? n : 0).toLocaleString("en-BD")}`;
+}
+
+/**
+ * The delivery promise is the ERP's own rule: free delivery over its threshold
+ * only while the shop offers it, otherwise the promise every order keeps.
+ */
+export function deliveryPromise(shipping) {
+  const threshold = Number(shipping?.freeShippingThreshold);
+  if (shipping?.freeShippingEnabled && Number.isFinite(threshold) && threshold > 0) {
+    return `Free delivery over ${takaLabel(threshold)}`;
+  }
+  return "Cash on delivery across Bangladesh";
+}
 
 function Pill({ Icon, label, href, className = "" }) {
   return (
@@ -35,6 +49,8 @@ function Pill({ Icon, label, href, className = "" }) {
 }
 
 export default function TopStrip({ text, link }) {
+  const { settings } = useSettings();
+
   // A merchant announcement replaces the promises entirely.
   if (text) {
     const body = (
@@ -67,17 +83,23 @@ export default function TopStrip({ text, link }) {
     );
   }
 
+  const promises = [
+    { Icon: Truck, label: deliveryPromise(settings?.shipping), href: "/shipping" },
+    { Icon: RefreshCw, label: "7-day easy exchange", href: "/returns" },
+    { Icon: Sparkles, label: "New arrivals", href: "/shop?newArrival=true" },
+  ];
+
   return (
     <div className="h-12 bg-paper flex items-center justify-center px-5">
       <div className="flex items-center gap-2">
-        {PROMISES.map(({ Icon, label, href }, i) => (
+        {promises.map(({ Icon, label, href }, i) => (
           <Pill
-            key={label}
+            key={href}
             Icon={Icon}
             label={label}
             href={href}
             // Only the first promise survives on a phone — three pills will not
-            // fit, and the delivery threshold is the one worth the space.
+            // fit, and the delivery promise is the one worth the space.
             className={i === 0 ? "" : "hidden md:inline-flex"}
           />
         ))}

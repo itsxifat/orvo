@@ -1,40 +1,42 @@
 {
   "name": "orvo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint --ext .js,.mjs app components context hooks lib scripts middleware.js next.config.mjs",
+    "test": "node --conditions=react-server --test \"tests/**/*.test.mjs\"",
+    "check:no-database": "node scripts/check-no-database.mjs",
+    "e2e:cert": "node scripts/make-mail-sink-cert.mjs",
+    "e2e:setup": "node e2e/erp-setup.mjs",
+    "e2e": "playwright test",
+    "test:e2e": "node e2e/erp-setup.mjs && playwright test"
   },
   "dependencies": {
-    "bcryptjs": "^3.0.3",
-    "cloudinary": "^2.10.0",
-    "html2canvas": "^1.4.1",
-    "jspdf": "^4.2.1",
+    "@fontsource-variable/saira": "5.3.0",
     "lucide-react": "^1.16.0",
-    "mongoose": "^9.6.2",
-    "next": "14.2.35",
-    "next-auth": "^4.24.14",
-    "next-cloudinary": "^6.17.5",
-    "nodemailer": "^7.0.13",
-    "qrcode.react": "^4.2.0",
+    "next": "15.5.29",
+    "next-auth": "4.24.15",
     "react": "^18",
     "react-dom": "^18",
-    "react-easy-crop": "^5.5.7",
     "react-hook-form": "^7.76.0",
     "react-hot-toast": "^2.6.0",
+    "server-only": "^0.0.1",
     "sharp": "^0.35.1",
-    "sslcommerz-lts": "^1.2.0",
-    "steadfast-fraud": "^1.0.2",
     "swiper": "^12.1.4"
   },
   "devDependencies": {
-    "dotenv": "^17.4.2",
+    "@playwright/test": "1.63.0",
     "eslint": "^8",
-    "eslint-config-next": "14.2.35",
-    "postcss": "^8",
+    "eslint-config-next": "15.5.29",
+    "mailparser": "^3.7.2",
+    "postcss": "8.5.33",
+    "smtp-server": "^3.13.6",
     "tailwindcss": "^3.4.1"
+  },
+  "overrides": {
+    "postcss": "8.5.33"
   }
 }

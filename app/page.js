@@ -1,11 +1,7 @@
 export const dynamic = "force-dynamic";
 
-import { connectDB } from "@/lib/mongoose";
-import Product from "@/models/Product";
-import Category from "@/models/Category";
-import Settings from "@/models/Settings";
-import { serializeDoc } from "@/lib/utils";
-import { getActiveFlashSalePublic } from "@/lib/flashSale";
+import { Suspense } from "react";
+import { getSite, homeProducts, getCategoryTree, flattenCategories, getFlashSales } from "@/lib/storefront";
 import HeroBanners from "@/components/home/HeroBanners";
 import CategoryGrid from "@/components/home/CategoryGrid";
 import FlashSaleSection from "@/components/home/FlashSaleSection";
@@ -13,87 +9,77 @@ import FeaturedProducts from "@/components/home/FeaturedProducts";
 import PromoBanner from "@/components/home/PromoBanner";
 import NewArrivals from "@/components/home/NewArrivals";
 import Testimonials from "@/components/home/Testimonials";
-import NewsletterSection from "@/components/home/NewsletterSection";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import CartDrawer from "@/components/layout/CartDrawer";
 import WhatsAppButton from "@/components/ui/WhatsAppButton";
 import TrackingBootstrap from "@/components/tracking/TrackingBootstrap";
+import CustomUrlExperience from "@/components/layout/CustomUrlExperience";
+import JsonLd from "@/components/seo/JsonLd";
+import { DEFAULT_SITE_NAME, TAGLINE, organizationJsonLd, pageMetadata, websiteJsonLd } from "@/lib/seo";
+
+// The home page's title, description and canonical address, from the shop's
+// name in the ERP (lib/seo.js).
+export async function generateMetadata() {
+  const site = await getSite();
+  const name = site?.siteInfo?.siteName || DEFAULT_SITE_NAME;
+  return pageMetadata({
+    title: { absolute: `${name} — ${TAGLINE}` },
+    description: `${name} builds considered, everyday clothing for men, women and kids. Shop new drops, core essentials and seasonal edits — cash on delivery across Bangladesh.`,
+    path: "/",
+    siteName: name,
+  });
+}
 
 async function getHomeData() {
-  try {
-    await connectDB();
-    const [featuredProducts, newArrivals, settings] = await Promise.all([
-      Product.find({ isPublished: true, featured: true })
-        .populate("category", "name slug gender")
-        .sort({ createdAt: -1 })
-        .limit(8)
-        .lean(),
-      Product.find({ isPublished: true, isNewArrival: true })
-        .populate("category", "name slug gender")
-        .sort({ createdAt: -1 })
-        .limit(8)
-        .lean(),
-      Settings.findOne({}).lean(),
-    ]);
+  const [site, products, tree, flash] = await Promise.all([
+    getSite(),
+    homeProducts().catch(() => ({ featuredProducts: [], newArrivals: [] })),
+    getCategoryTree(),
+    getFlashSales({ home: true }).catch(() => ({ live: [] })),
+  ]);
 
-    let categories = await Category.find({ isActive: true, isFeatured: true })
-      .sort({ sortOrder: 1 })
-      .limit(3)
-      .lean();
-    if (categories.length === 0) {
-      categories = await Category.find({ isActive: true })
-        .sort({ sortOrder: 1 })
-        .limit(3)
-        .lean();
-    }
+  // The collections: the categories marked featured on the ERP's Catalog
+  // setup, else the first three at the top of the tree.
+  const top = flattenCategories(tree).filter((c) => !c.parent);
+  const featured = flattenCategories(tree).filter((c) => c.featured);
+  const categories = (featured.length ? featured : top).slice(0, 3);
 
-    // Graceful fallback: if nothing is flagged featured / new-arrival yet, show
-    // the most recent products so the homepage never collapses to empty.
-    let featured = featuredProducts;
-    let arrivals = newArrivals;
-    if (featured.length === 0 || arrivals.length === 0) {
-      const recent = await Product.find({ isPublished: true })
-        .populate("category", "name slug gender")
-        .sort({ createdAt: -1 })
-        .limit(16)
-        .lean();
-      if (featured.length === 0) featured = recent.slice(0, 8);
-      if (arrivals.length === 0) arrivals = recent.slice(8, 16);
-    }
-
-    const flashSale = await getActiveFlashSalePublic();
-
-    return {
-      featuredProducts: serializeDoc(featured),
-      newArrivals: serializeDoc(arrivals),
-      categories: serializeDoc(categories),
-      heroBanners: serializeDoc(settings?.heroBanners || []),
-      promoBanner: serializeDoc(settings?.promoBanner || null),
-      testimonials: serializeDoc(settings?.testimonials || []),
-      flashSale: serializeDoc(flashSale),
-    };
-  } catch {
-    return { featuredProducts: [], newArrivals: [], categories: [], heroBanners: [], promoBanner: null, testimonials: [], flashSale: null };
-  }
+  return {
+    featuredProducts: products.featuredProducts,
+    newArrivals: products.newArrivals,
+    categories,
+    // The ERP's hero slides (Website → Hero), already in the banners' shape:
+    // { _id, imageDesktop, imageMobile, href, alt } (lib/storefront.js).
+    heroBanners: site.heroSlides,
+    promoBanner: site.promoBanner,
+    testimonials: site.testimonials,
+    flashSales: flash.live,
+    site,
+  };
 }
 
 export default async function HomePage() {
-  const { featuredProducts, newArrivals, categories, heroBanners, promoBanner, testimonials, flashSale } = await getHomeData();
+  const { featuredProducts, newArrivals, categories, heroBanners, promoBanner, testimonials, flashSales, site } = await getHomeData();
 
   return (
     <>
       <TrackingBootstrap />
       <Navbar />
       <main>
+        {/* The shop as an online store, and its search, for Google. */}
+        <JsonLd data={[organizationJsonLd(site), websiteJsonLd(site)]} />
+        {/* A campaign link may open on the home page (`/?cu=<code>`, a custom path). */}
+        <Suspense fallback={null}>
+          <CustomUrlExperience />
+        </Suspense>
         <HeroBanners banners={heroBanners} />
-        <FlashSaleSection sale={flashSale} />
+        <FlashSaleSection sales={flashSales} />
         <CategoryGrid categories={categories} />
         <FeaturedProducts products={featuredProducts} />
         <PromoBanner promoBanner={promoBanner} />
         <NewArrivals products={newArrivals} />
         <Testimonials testimonials={testimonials} />
-        <NewsletterSection />
       </main>
       <Footer />
       <CartDrawer />

@@ -17,11 +17,18 @@ export default function ForgotPasswordPage() {
   const onSubmit = async (data) => {
     setLoading(true);
     try {
-      await fetch("/api/auth/forgot-password", {
+      // The ERP answers the same whether or not the address has an account; a
+      // refusal here is the request itself (too many tries, the shop down).
+      const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: data.email }),
       });
+      if (!res.ok) {
+        const result = await res.json().catch(() => ({}));
+        toast.error(result.error || "Could not send the link. Please try again.");
+        return;
+      }
       setSentTo(data.email);
       setSent(true);
     } catch {

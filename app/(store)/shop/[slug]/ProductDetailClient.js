@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { X, MessageCircle, ChevronRight, Truck, RefreshCw, ShieldCheck } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
 import ImageGallery from "@/components/product/ImageGallery";
-import VariantSelector from "@/components/product/VariantSelector";
+import VariantSelector, { ColourSelector } from "@/components/product/VariantSelector";
 import AddToCartButton from "@/components/product/AddToCartButton";
 import MobileBuyBar from "@/components/product/MobileBuyBar";
 import ProductCard from "@/components/shop/ProductCard";
@@ -13,6 +13,10 @@ import SectionHead from "@/components/home/SectionHead";
 import { track } from "@/lib/tracking/client";
 import { useSettings } from "@/context/SettingsContext";
 import Reveal from "@/components/motion/Reveal";
+import WasPrice from "@/components/ui/WasPrice";
+import { CountdownText } from "@/components/flash/Countdown";
+import { useAddToBag } from "@/components/product/useAddToBag";
+import { coloursOf, galleryFor, priceSummary } from "@/lib/storefront-map";
 
 const SERVICE = [
   { Icon: Truck, label: "Ships in 24h", note: "2–4 days nationwide" },
@@ -24,7 +28,7 @@ function SizeChartModal({ chart, onClose }) {
   return (
     <div className="fixed inset-0 z-[85] flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="absolute inset-0 animate-fade-in bg-ink/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative flex max-h-[86vh] w-full animate-sheet-up flex-col overflow-hidden rounded-t-4xl bg-paper-pure shadow-pop sm:max-w-2xl sm:animate-pop sm:rounded-4xl">
+      <div className="relative flex max-h-[86vh] w-full animate-sheet-up flex-col overflow-hidden rounded-t-4xl bg-paper-pure shadow-pop sm:max-w-2xl sm:animate-pop sm:rounded-4xl" role="dialog" aria-modal="true" aria-label="Size guide">
         <div className="flex items-center justify-between px-6 sm:px-8 py-5 shrink-0">
           <div>
             <p className="text-[19px] font-bold text-ink tracking-[-0.03em]">{chart.name}</p>
@@ -72,47 +76,74 @@ function SizeChartModal({ chart, onClose }) {
   );
 }
 
-export default function ProductDetailClient({ product, related = [], categoryPath = [] }) {
+export default function ProductDetailClient({ product, related = [], categoryPath = [], preselect }) {
   const { settings } = useSettings();
-  const [selectedSize, setSelectedSize] = useState("");
+  const [sizeError, setSizeError] = useState(0);
   const [showSizeChart, setShowSizeChart] = useState(false);
   const [tab, setTab] = useState("details");
 
-  // The buy bar shows itself when this block leaves the screen, and sends the
-  // reader back to the sizes when they tap it without one picked.
   const buyBlockRef = useRef(null);
   const sizeBlockRef = useRef(null);
-
-  const scrollToSizes = useCallback(() => {
-    sizeBlockRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, []);
-
   const variants = product.variants || [];
-  const selectedVariant = variants.find((v) => v.size === selectedSize);
-  const prices = variants.map((v) => v.price);
-  const minPrice = prices.length ? Math.min(...prices) : 0;
-  const maxPrice = prices.length ? Math.max(...prices) : 0;
-  const hasPriceRange = minPrice !== maxPrice;
-  const displayPrice = selectedVariant ? selectedVariant.price : minPrice;
+  const colours = coloursOf(product);
+  const pickColour = colours.length > 1 && variants.some((variant) => variant.sizeOnly);
+  const sameLabel = (actual, asked) => String(actual ?? "").trim().toLowerCase() === String(asked).trim().toLowerCase();
+  const requested = preselect?.size || preselect?.colour ? variants.find((variant) =>
+    (!preselect.size || sameLabel(variant.sizeOnly || variant.size, preselect.size)) &&
+    (!preselect.colour || sameLabel(variant.colour, preselect.colour))
+  ) : null;
+  const [colour, setColour] = useState(() =>
+    pickColour ? requested?.colour || variants.find((variant) => variant.colour && variant.stock > 0)?.colour || colours[0] : null
+  );
+  const shownVariants = pickColour ? variants.filter((variant) => variant.colour === colour) : variants;
+  const onlySize = (sizes) => sizes.length === 1 && sizes[0].stock > 0 ? sizes[0].size : "";
+  const [selectedSize, setSelectedSize] = useState(() => requested?.size || onlySize(shownVariants));
+  const selectedVariant = shownVariants.find((variant) => variant.size === selectedSize);
+  const labelOf = (variant) => pickColour ? variant.sizeOnly || variant.size : variant.size;
+  const galleryColour = colour || selectedVariant?.colour;
+  const gallery = galleryFor(product, galleryColour);
+  const summary = priceSummary(shownVariants);
+  const price = {
+    now: selectedVariant?.price ?? summary.min,
+    was: selectedVariant ? selectedVariant.compareAt : summary.compareAt,
+    from: !selectedVariant && summary.min !== summary.max,
+  };
+  const sale = selectedVariant?.flash?.sale || shownVariants.find((variant) => variant.stock > 0 && variant.flash)?.flash?.sale;
+  const bag = useAddToBag({
+    product,
+    selectedVariant,
+    image: gallery[0],
+    onNeedSize: () => {
+      setSizeError((count) => count + 1);
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      sizeBlockRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+    },
+  });
+
+  function selectColour(next) {
+    setColour(next);
+    setSelectedSize(onlySize(variants.filter((variant) => variant.colour === next)));
+    setSizeError(0);
+  }
 
   const productId = product._id || product.id;
   // ViewContent — fires once per product view.
   useEffect(() => {
     track.viewContent({
       customData: {
-        value: minPrice,
+        value: summary.min,
         currency: "BDT",
         content_type: "product",
         content_ids: [productId],
         content_name: product.name,
-        contents: [{ id: productId, quantity: 1, item_price: minPrice }],
+        contents: [{ id: productId, quantity: 1, item_price: summary.min }],
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId]);
 
   const whatsappNumber =
-    settings?.siteInfo?.whatsappNumber || process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "8801700000000";
+    settings?.siteInfo?.whatsappNumber || process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "";
   const whatsappMsg = encodeURIComponent(`Hi, I'm interested in: ${product.name}`);
 
   const tabs = [
@@ -146,7 +177,7 @@ export default function ProductDetailClient({ product, related = [], categoryPat
 
         {/* ── Gallery ───────────────────────────────────────────────────────*/}
         <div className="pb-8 lg:pb-0">
-          <ImageGallery images={product.images} name={product.name} />
+          <ImageGallery key={galleryColour || "all"} images={gallery} name={product.name} />
         </div>
 
         {/* ── Buy panel ─────────────────────────────────────────────────────*/}
@@ -169,9 +200,8 @@ export default function ProductDetailClient({ product, related = [], categoryPat
 
             <div className="flex items-end justify-between gap-4 mt-4 pb-6 border-b border-haze-dark">
               <p className="text-[30px] font-bold text-ink tabular-nums tracking-[-0.03em] leading-none">
-                {hasPriceRange && !selectedVariant
-                  ? `${formatPrice(minPrice)} – ${formatPrice(maxPrice)}`
-                  : formatPrice(displayPrice)}
+                {price.from ? `From ${formatPrice(price.now)}` : formatPrice(price.now)}
+                {price.was > price.now && <WasPrice amount={price.was} className="ml-2 text-[16px]" />}
               </p>
               <p className="text-[13px] text-smoke text-right leading-tight">
                 {selectedVariant?.sku ? (
@@ -180,7 +210,7 @@ export default function ProductDetailClient({ product, related = [], categoryPat
                     <br />
                     <span className="text-ink/70 tabular-nums">{selectedVariant.sku}</span>
                   </>
-                ) : hasPriceRange ? (
+                ) : price.from ? (
                   "Varies by size"
                 ) : (
                   "Taxes included"
@@ -189,30 +219,44 @@ export default function ProductDetailClient({ product, related = [], categoryPat
             </div>
 
             <div ref={sizeBlockRef} className="mt-6 scroll-mt-[calc(var(--header-h)+24px)]">
+              {pickColour && (
+                <div className="mb-5">
+                  <ColourSelector colours={colours} variants={variants} selected={colour} onChange={selectColour} />
+                </div>
+              )}
               <VariantSelector
-                variants={variants}
+                variants={shownVariants}
                 selectedSize={selectedSize}
-                onSizeChange={setSelectedSize}
+                labelOf={labelOf}
+                error={sizeError}
+                onSizeChange={(size) => {
+                  setSelectedSize(size);
+                  setSizeError(0);
+                }}
                 hasSizeChart={!!product.sizeChart}
                 onSizeGuideClick={() => setShowSizeChart(true)}
               />
             </div>
 
             <div ref={buyBlockRef} className="mt-6 space-y-3">
-              <AddToCartButton
-                product={product}
-                selectedSize={selectedSize}
-                selectedVariant={selectedVariant}
-              />
-              <a
-                href={`https://wa.me/${whatsappNumber}?text=${whatsappMsg}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-outline w-full"
-              >
-                <MessageCircle size={16} strokeWidth={2} />
-                Ask about this piece
-              </a>
+              {sale && (
+                <Link href={`/flash-sale/${sale.slug}`} className="flex items-center justify-between gap-3 rounded-2xl bg-haze px-4 py-3 text-sm font-semibold text-ink">
+                  {sale.title}
+                  <CountdownText target={sale.endsAt} />
+                </Link>
+              )}
+              <AddToCartButton selectedVariant={selectedVariant} bag={bag} />
+              {whatsappNumber && (
+                <a
+                  href={`https://wa.me/${whatsappNumber.replace(/\D/g, "")}?text=${whatsappMsg}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-outline w-full"
+                >
+                  <MessageCircle size={16} strokeWidth={2} />
+                  Ask about this piece
+                </a>
+              )}
             </div>
 
             {/* Service strip. Three 100px columns on a phone turned every one
@@ -307,13 +351,7 @@ export default function ProductDetailClient({ product, related = [], categoryPat
         <SizeChartModal chart={product.sizeChart} onClose={() => setShowSizeChart(false)} />
       )}
 
-      <MobileBuyBar
-        product={product}
-        selectedSize={selectedSize}
-        selectedVariant={selectedVariant}
-        watchRef={buyBlockRef}
-        onNeedSize={scrollToSizes}
-      />
+      <MobileBuyBar product={product} selectedVariant={selectedVariant} bag={bag} label={labelOf} price={price} watchRef={buyBlockRef} />
 
       {/* ── Related ─────────────────────────────────────────────────────────*/}
       {related.length > 0 && (

@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import toast from "react-hot-toast";
 import { Minus, Plus, X, ArrowUpRight, ArrowLeft, ShoppingBag, Truck } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useSettings } from "@/context/SettingsContext";
-import { formatPrice, shouldUnoptimizeImage } from "@/lib/utils";
+import { formatPrice, shouldUnoptimizeImage, PLACEHOLDER_IMAGE } from "@/lib/utils";
+import WasPrice from "@/components/ui/WasPrice";
 
 function ShippingMeter({ subtotal, threshold }) {
   const pct = Math.min(100, Math.round((subtotal / threshold) * 100));
@@ -52,20 +53,52 @@ export default function CartPage() {
     syncWithServer().then(({ changed }) => {
       if (cancelled || !changed.length) return;
       const gone = changed.filter((c) => c.status === "gone" || c.available === 0);
-      const trimmed = changed.filter((c) => c.status === "limited");
+      const trimmed = changed.filter((c) => c.status === "limited" || c.status === "repriced");
       if (gone.length) toast(`${gone.length === 1 ? gone[0].name || "An item" : `${gone.length} items`} sold out and left your bag.`);
-      for (const t of trimmed) toast(t.reason);
+      for (const t of trimmed) if (t.reason) toast(t.reason);
     });
     return () => { cancelled = true; };
     // Runs once per visit to the bag; syncWithServer reads the live cart itself.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
-  const freeShippingThreshold = settings?.siteInfo?.freeShippingThreshold || 1500;
-  const shippingFee = settings?.siteInfo?.shippingFee || 80;
-  const shipping = subtotal >= freeShippingThreshold ? 0 : shippingFee;
-  const total = subtotal + shipping;
-  const unitCount = items.reduce((n, i) => n + i.quantity, 0);
+  // The ERP prices the bag (items and any automatic discount); delivery needs
+  // a delivery area, so its charge is worked out at checkout.
+  const [quote, setQuote] = useState(null);
+  const lines = useMemo(
+    () => items.filter((i) => !i.unavailable).map((i) => ({ skuId: i.skuId, qty: i.quantity })),
+    [items]
+  );
+  useEffect(() => {
+    if (!lines.length) { setQuote(null); return; }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      fetch("/api/cart/quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lines }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (!cancelled && d) setQuote(d.quote); })
+        .catch(() => {});
+    }, 200);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [lines]);
+
+  const itemsTotal = quote ? Number(quote.items.taka) : subtotal;
+  const discount = quote ? Number(quote.discount.taka) : 0;
+  const total = quote ? Number(quote.total.taka) : subtotal;
+  // The free-delivery rule from the ERP's Website → Settings.
+  const shippingRule = settings?.shipping || {};
+  const freeShippingThreshold = shippingRule.freeShippingEnabled ? shippingRule.freeShippingThreshold : null;
+  const freeShipping = !!shippingRule.freeShippingEnabled && (!freeShippingThreshold || itemsTotal >= freeShippingThreshold);
+  const unitCount = items.filter((i) => !i.unavailable).reduce((n, i) => n + i.quantity, 0);
+
+  // The ways to pay the shop has switched on in the ERP.
+  const gateways = settings?.paymentGateways || {};
+  const cod = gateways.cod?.enabled !== false;
+  const online = !!gateways.sslcommerz?.enabled;
+  const paymentChips = [...(online ? ["bKash", "Nagad", "Visa", "Mastercard"] : []), ...(cod ? ["COD"] : [])];
 
   return (
     <div className="container-custom pb-28 lg:pb-16">
@@ -97,7 +130,7 @@ export default function CartPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(340px,400px)] gap-6 lg:gap-8 items-start">
 
           <div className="space-y-4">
-            <ShippingMeter subtotal={subtotal} threshold={freeShippingThreshold} />
+            {freeShippingThreshold > 0 && <ShippingMeter subtotal={itemsTotal} threshold={freeShippingThreshold} />}
 
             <ul className="space-y-4">
               {items.map((item) => (
@@ -110,10 +143,10 @@ export default function CartPage() {
                     className="relative w-[96px] sm:w-[112px] aspect-[4/5] rounded-2xl bg-haze overflow-hidden shrink-0"
                   >
                     <Image
-                      src={item.image || "/placeholder.jpg"}
+                      src={item.image || PLACEHOLDER_IMAGE}
                       alt={item.name}
                       fill
-                      unoptimized={shouldUnoptimizeImage(item.image)}
+                      unoptimized={shouldUnoptimizeImage(item.image || PLACEHOLDER_IMAGE)}
                       className="object-cover"
                       sizes="112px"
                     />
@@ -145,9 +178,24 @@ export default function CartPage() {
                       </button>
                     </div>
 
-                    {/* Stepper, stock note and line total in one row needed
-                        more width than a phone gives a card with a photo in it,
-                        so the row is allowed to wrap and the total goes last. */}
+                    {/* A line checkout found sold out stays visible until the
+                        shopper removes it; it is in no total. */}
+                    {item.unavailable ? (
+                      <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-4">
+                        <span className="inline-flex items-center rounded-full bg-signal-soft px-2.5 py-1 text-[12px] font-semibold text-signal">
+                          Sold out
+                        </span>
+                        <Link
+                          href="/shop"
+                          className="text-[12.5px] font-medium text-smoke underline decoration-haze-dark underline-offset-4 transition-colors duration-fast ease-swift hover:text-ink"
+                        >
+                          See something similar
+                        </Link>
+                      </div>
+                    ) : (
+                    /* Stepper, stock note and line total in one row needed
+                       more width than a phone gives a card with a photo in it,
+                       so the row is allowed to wrap and the total goes last. */
                     <div className="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-2 pt-4">
                       <div className="flex items-center rounded-full bg-haze">
                         <button
@@ -174,10 +222,20 @@ export default function CartPage() {
                           {item.maxStock} in stock
                         </span>
                       )}
-                      <span className="ml-auto text-[17px] font-bold tracking-[-0.02em] tabular-nums text-ink sm:text-[18px]">
-                        {formatPrice(item.price * item.quantity)}
+                      <span className="ml-auto flex flex-col items-end leading-tight">
+                        {item.regularPrice > item.price && (
+                          <WasPrice amount={item.regularPrice * item.quantity} className="text-[13px]" />
+                        )}
+                        <span
+                          className={`text-[17px] font-bold tracking-[-0.02em] tabular-nums sm:text-[18px] ${
+                            item.regularPrice > item.price ? "text-signal" : "text-ink"
+                          }`}
+                        >
+                          {formatPrice(item.price * item.quantity)}
+                        </span>
                       </span>
                     </div>
+                    )}
                   </div>
                 </li>
               ))}
@@ -201,12 +259,18 @@ export default function CartPage() {
               <dl className="space-y-3.5 text-[15px]">
                 <div className="flex justify-between">
                   <dt className="text-white/50">Subtotal</dt>
-                  <dd className="tabular-nums">{formatPrice(subtotal)}</dd>
+                  <dd className="tabular-nums" data-testid="cart-subtotal">{formatPrice(itemsTotal)}</dd>
                 </div>
+                {discount > 0 && (
+                  <div className="flex justify-between">
+                    <dt className="text-white/50">Discount</dt>
+                    <dd className="tabular-nums text-beam">− {formatPrice(discount)}</dd>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <dt className="text-white/50">Delivery</dt>
-                  <dd className={shipping === 0 ? "text-beam font-semibold" : "tabular-nums"}>
-                    {shipping === 0 ? "Free" : formatPrice(shipping)}
+                  <dd className={freeShipping ? "text-beam font-semibold" : "text-white/70"}>
+                    {freeShipping ? "Free" : "At checkout"}
                   </dd>
                 </div>
               </dl>
@@ -230,17 +294,20 @@ export default function CartPage() {
               </Link>
 
               <p className="text-[13px] text-white/35 mt-4 leading-relaxed text-center">
-                Taxes included. Cash on delivery available.
+                {freeShipping ? "Taxes included." : "Taxes included. Delivery is added at checkout."}
+                {cod ? " Cash on delivery available." : ""}
               </p>
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-1.5">
-              {["bKash", "Nagad", "Visa", "Mastercard", "COD"].map((m) => (
-                <span key={m} className="rounded-full bg-haze px-3 py-1.5 text-[12px] text-smoke">
-                  {m}
-                </span>
-              ))}
-            </div>
+            {paymentChips.length > 0 && (
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-1.5">
+                {paymentChips.map((m) => (
+                  <span key={m} className="rounded-full bg-haze px-3 py-1.5 text-[12px] text-smoke">
+                    {m}
+                  </span>
+                ))}
+              </div>
+            )}
           </aside>
 
           {/* On a phone the summary lands under however many items are in the
@@ -253,7 +320,7 @@ export default function CartPage() {
             <div className="container-custom flex items-center gap-4 py-3">
               <div className="min-w-0 flex-1">
                 <p className="text-[12.5px] text-smoke">
-                  Total{shipping === 0 ? " · free delivery" : ""}
+                  Total{freeShipping ? " · free delivery" : " · delivery at checkout"}
                 </p>
                 <p className="text-[19px] font-bold leading-tight tracking-[-0.03em] tabular-nums text-ink">
                   {formatPrice(total)}

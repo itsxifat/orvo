@@ -13,6 +13,8 @@ const PRICE_BANDS = [
   { label: "Tk 2,000 and up", min: "2000", max: "" },
 ];
 
+// The ERP's own list filters (lib/storefront.js → listProducts): "On sale" is a
+// size with a regular price above its price, or a live flash price (M39b).
 const FLAGS = [
   { key: "newArrival", label: "New arrivals" },
   { key: "onSale", label: "On sale" },
@@ -31,6 +33,8 @@ function Block({ title, children, defaultOpen = true }) {
   return (
     <div className="py-1">
       <button
+        type="button"
+        aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className="flex items-center justify-between w-full py-3.5 text-left"
       >
@@ -50,7 +54,13 @@ function Block({ title, children, defaultOpen = true }) {
 
 function Tick({ on, label, onClick }) {
   return (
-    <button onClick={onClick} className="flex items-center justify-between w-full py-2 text-left group">
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={on}
+      onClick={onClick}
+      className="flex items-center justify-between w-full py-2 text-left group"
+    >
       <span className={`text-[15px] transition-colors ${on ? "text-ink font-medium" : "text-smoke group-hover:text-ink"}`}>
         {label}
       </span>
@@ -59,7 +69,7 @@ function Tick({ on, label, onClick }) {
           on ? "bg-ink" : "bg-haze group-hover:bg-haze-dark"
         }`}
       >
-        {on && <Check size={11} strokeWidth={3.2} className="text-beam" />}
+        {on && <Check size={11} strokeWidth={3.2} className="text-beam" aria-hidden />}
       </span>
     </button>
   );
@@ -132,10 +142,11 @@ export default function FilterPanel({ open, onClose, categories = [] }) {
   const currentMin = searchParams.get("minPrice");
   const currentMax = searchParams.get("maxPrice");
 
+  // A changed filter starts again at page 1, which is the bare address.
   const push = (mutate) => {
     const params = new URLSearchParams(searchParams.toString());
     mutate(params);
-    params.set("page", "1");
+    params.delete("page");
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
   };
@@ -156,18 +167,15 @@ export default function FilterPanel({ open, onClose, categories = [] }) {
     });
   };
 
-  const clearAll = () => {
-    const params = new URLSearchParams(searchParams.toString());
-    ["category", "size", "minPrice", "maxPrice", "newArrival", "onSale", "featured"].forEach((k) =>
-      params.delete(k)
-    );
-    params.set("page", "1");
-    router.push(`${pathname}?${params.toString()}`);
-  };
+  const clearAll = () =>
+    push((p) => ["category", "size", "minPrice", "maxPrice", "newArrival", "onSale", "featured"].forEach((k) => p.delete(k)));
+
+  const flagged = FLAGS.some((flag) => searchParams.get(flag.key) === "true");
 
   return (
     <>
       <div
+        aria-hidden
         onClick={onClose}
         className={`fixed inset-0 z-[65] bg-ink/40 backdrop-blur-sm transition-opacity duration-slow ease-swift ${
           open ? "opacity-100" : "opacity-0 pointer-events-none"
@@ -176,13 +184,17 @@ export default function FilterPanel({ open, onClose, categories = [] }) {
 
       <aside
         aria-hidden={!open}
-        className={`fixed inset-y-3 right-3 z-[75] flex w-[92%] max-w-[420px] flex-col overflow-hidden rounded-4xl bg-paper-pure shadow-pop transition-transform duration-slow ease-soft ${
-          open ? "translate-x-0" : "translate-x-[calc(100%+1rem)]"
+        aria-label="Filters"
+        className={`fixed inset-y-3 right-3 z-[75] flex w-[92%] max-w-[420px] flex-col overflow-hidden rounded-4xl bg-paper-pure shadow-pop transition-[transform,visibility] duration-slow ease-soft ${
+          // Closed, the sheet is also invisible (once it has slid away), so its
+          // controls leave the tab order.
+          open ? "visible translate-x-0" : "invisible translate-x-[calc(100%+1rem)]"
         }`}
       >
         <div className="flex items-center justify-between px-6 h-[70px] shrink-0">
           <p className="text-[20px] font-bold text-ink tracking-[-0.03em]">Filters</p>
           <button
+            type="button"
             onClick={onClose}
             className="press -mr-1 flex h-10 w-10 items-center justify-center rounded-full bg-haze text-ink transition-colors duration-fast ease-swift hover:bg-haze-dark"
             aria-label="Close filters"
@@ -221,6 +233,8 @@ export default function FilterPanel({ open, onClose, categories = [] }) {
                 return (
                   <button
                     key={size}
+                    type="button"
+                    aria-pressed={on}
                     onClick={() => toggleParam("size", size)}
                     className={on ? "chip chip-active min-w-[58px]" : "chip min-w-[58px]"}
                   >
@@ -242,7 +256,7 @@ export default function FilterPanel({ open, onClose, categories = [] }) {
             ))}
           </Block>
 
-          <Block title="Collections" defaultOpen={false}>
+          <Block title="Collections" defaultOpen={flagged}>
             {FLAGS.map((flag) => (
               <Tick
                 key={flag.key}
@@ -255,10 +269,10 @@ export default function FilterPanel({ open, onClose, categories = [] }) {
         </div>
 
         <div className="shrink-0 p-5 flex gap-3 bg-paper-pure">
-          <button onClick={clearAll} className="btn-outline flex-1">
+          <button type="button" onClick={clearAll} className="btn-outline flex-1">
             Clear
           </button>
-          <button onClick={onClose} className="btn-primary flex-1">
+          <button type="button" onClick={onClose} className="btn-primary flex-1">
             Show results
           </button>
         </div>

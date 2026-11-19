@@ -3,11 +3,19 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Plus } from "lucide-react";
-import { formatPrice, shouldUnoptimizeImage } from "@/lib/utils";
+import { Plus, Zap } from "lucide-react";
+import { formatPrice, shouldUnoptimizeImage, PLACEHOLDER_IMAGE } from "@/lib/utils";
 import QuickAddModal from "@/components/shop/QuickAddModal";
+import WasPrice from "@/components/ui/WasPrice";
 
-/* The card is deliberately quiet on hover: the frame rises a few pixels, the
+/* A product card from the ERP's list (lib/storefront-map.js → mapCard): what a
+   shopper pays now (`minPrice`, a live flash price included), the regular or
+   shelf price struck through under it (`compareAt`), the sizes and whether any
+   size is in stock. `product.flash` marks a product a live flash sale covers
+   (the zap badge). Quick add loads the sizes with their stock and prices when
+   it opens.
+
+   The card is deliberately quiet on hover: the frame rises a few pixels, the
    photo settles into a slightly closer crop, and the second shot crossfades in.
    Three things, one duration, one curve.
 
@@ -22,23 +30,22 @@ import QuickAddModal from "@/components/shop/QuickAddModal";
 export default function ProductCard({ product, priority = false, sizes }) {
   const [showModal, setShowModal] = useState(false);
 
-  const variants = product.variants || [];
-  const totalStock = variants.reduce((s, v) => s + (v.stock || 0), 0);
-  const isOutOfStock = totalStock === 0;
-  const prices = variants.map((v) => v.price);
-  const minPrice = prices.length ? Math.min(...prices) : 0;
-  const maxPrice = prices.length ? Math.max(...prices) : 0;
-  const hasPriceRange = minPrice !== maxPrice;
-  const lowStock = !isOutOfStock && totalStock <= 5;
+  const isOutOfStock = !product.inStock;
+  const flash = product.flash || null;
+  const minPrice = product.minPrice;
+  const compareAt = product.compareAt > minPrice ? product.compareAt : null;
+  const discount = compareAt ? product.discount || 0 : 0;
+  const hasPriceRange = product.minPrice !== product.maxPrice;
+  const reduced = !!compareAt || !!flash;
 
-  const mainImage = product.images?.[0] || "/placeholder.jpg";
+  const mainImage = product.images?.[0] || PLACEHOLDER_IMAGE;
   const hoverImage = product.images?.[1];
-  const availableSizes = variants.filter((v) => v.stock > 0);
+  const sizeList = product.sizes || [];
   const imageSizes = sizes || "(max-width: 640px) 46vw, (max-width: 1024px) 33vw, 25vw";
 
   return (
     <>
-      <div className="group flex h-full flex-col">
+      <div className="group flex h-full flex-col" data-testid="product-card">
         {/* ── Image frame ─────────────────────────────────────────────────── */}
         <div className="media-lift relative aspect-[4/5] overflow-hidden rounded-[22px] bg-haze sm:rounded-3xl">
           <Image
@@ -61,24 +68,32 @@ export default function ProductCard({ product, priority = false, sizes }) {
             />
           )}
 
-          <Link href={`/shop/${product.slug}`} className="absolute inset-0 z-10">
+          <Link href={`/shop/${product.slug}`} className="absolute inset-0 z-10" tabIndex={-1} aria-hidden>
             <span className="sr-only">{product.name}</span>
           </Link>
 
-          {/* Status pill */}
+          {/* Status pills */}
           <div className="pointer-events-none absolute left-2.5 top-2.5 z-20 flex flex-wrap gap-1.5 sm:left-3 sm:top-3">
             {isOutOfStock ? (
               <span className="badge-out">Sold out</span>
             ) : (
               <>
+                {flash ? (
+                  <span className="badge-sale gap-1">
+                    <Zap size={11} strokeWidth={2.6} className="fill-current" aria-hidden />
+                    {discount > 0 ? `-${discount}%` : "Flash price"}
+                  </span>
+                ) : (
+                  discount > 0 && <span className="badge-sale">-{discount}%</span>
+                )}
                 {product.isNewArrival && <span className="badge-new">New</span>}
-                {lowStock && <span className="badge-sale">Only {totalStock} left</span>}
               </>
             )}
           </div>
 
-          {/* Quick add — always present on touch, fades in on a mouse. */}
-          {!isOutOfStock && variants.length > 0 && (
+          {/* Quick add — always present on touch, fades in on a mouse. The sizes
+              are read from the ERP when it opens. */}
+          {!isOutOfStock && (
             <button
               type="button"
               onClick={() => setShowModal(true)}
@@ -102,8 +117,14 @@ export default function ProductCard({ product, priority = false, sizes }) {
             <h3 className="line-clamp-2 text-[14px] font-semibold leading-snug tracking-[-0.015em] text-ink sm:line-clamp-1 sm:text-[15.5px]">
               {product.name}
             </h3>
-            <p className="text-[14px] font-semibold tabular-nums text-ink sm:shrink-0 sm:whitespace-nowrap sm:text-[15.5px]">
-              {hasPriceRange ? `${formatPrice(minPrice)}+` : formatPrice(minPrice)}
+            <p className="flex flex-wrap items-baseline gap-x-2 sm:shrink-0 sm:flex-col sm:items-end sm:gap-0">
+              <span
+                data-testid="price-now"
+                className={`whitespace-nowrap text-[14px] font-semibold tabular-nums sm:text-[15.5px] ${reduced ? "text-signal" : "text-ink"}`}
+              >
+                {hasPriceRange ? `${formatPrice(minPrice)}+` : formatPrice(minPrice)}
+              </span>
+              {compareAt && <WasPrice amount={compareAt} className="whitespace-nowrap text-[12px] sm:text-[12.5px]" />}
             </p>
           </div>
 
@@ -111,11 +132,9 @@ export default function ProductCard({ product, priority = false, sizes }) {
             {product.category?.name && (
               <p className="truncate text-[12px] text-smoke sm:text-[13px]">{product.category.name}</p>
             )}
-            {availableSizes.length > 0 && (
+            {!isOutOfStock && sizeList.length > 0 && (
               <p className="shrink-0 text-[12px] text-smoke sm:text-[13px]">
-                {availableSizes.length === 1
-                  ? availableSizes[0].size
-                  : `${availableSizes.length} sizes`}
+                {sizeList.length === 1 ? sizeList[0] : `${sizeList.length} sizes`}
               </p>
             )}
           </div>

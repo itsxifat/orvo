@@ -2,26 +2,19 @@ export const dynamic = "force-dynamic";
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { connectDB } from "@/lib/mongoose";
-import Order from "@/models/Order";
-import { serializeDoc, formatPrice } from "@/lib/utils";
+import { getAccountOrders } from "@/lib/storefront";
+import { formatPrice } from "@/lib/utils";
 import Link from "next/link";
 import Badge from "@/components/ui/Badge";
+import OrderStateNotice, { needsStateNotice } from "@/components/ui/OrderStateNotice";
 import { redirect } from "next/navigation";
 import { Package } from "lucide-react";
 
 const statusSteps = ["pending", "processing", "shipped", "delivered"];
-const stepLabels = ["Pending", "Processing", "Shipped", "Delivered"];
+const stepLabels = ["Placed", "Processing", "Shipped", "Delivered"];
 
-function OrderTracker({ status }) {
-  if (status === "cancelled") {
-    return (
-      <div className="inline-flex items-center gap-2 mt-4 px-3 py-1.5 bg-red-50">
-        <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
-        <span className="text-[10px] uppercase tracking-[-0.005em] text-red-500">Cancelled</span>
-      </div>
-    );
-  }
+function OrderTracker({ status, label }) {
+  if (needsStateNotice(status)) return <OrderStateNotice status={status} label={label} size="sm" className="mt-4" />;
 
   const current = statusSteps.indexOf(status);
 
@@ -65,22 +58,23 @@ function OrderTracker({ status }) {
   );
 }
 
-async function getUserOrders(userId) {
-  await connectDB();
-  // The internal audit trail is staff-only and never fetched here.
-  return serializeDoc(
-    await Order.find({ user: userId })
-      .select("-editHistory -fraudCheck")
-      .sort({ createdAt: -1 })
-      .lean()
-  );
+// The shopper's website orders from the brand ERP, newest first: those placed
+// while signed in, and guest orders that gave this account's verified email
+// (D-523). Never the desk's orders for the same phone (D-533).
+async function getUserOrders(accountId) {
+  try {
+    return { orders: await getAccountOrders(accountId), failed: false };
+  } catch (error) {
+    console.error("account orders:", error?.code || error?.message);
+    return { orders: [], failed: true };
+  }
 }
 
 export default async function OrdersPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/auth/login");
 
-  const orders = await getUserOrders(session.user.id);
+  const { orders, failed } = await getUserOrders(session.user.id);
 
   return (
     <div className="bg-white p-8">
@@ -91,7 +85,9 @@ export default async function OrdersPage() {
         </span>
       </div>
 
-      {orders.length === 0 ? (
+      {failed ? (
+        <p className="text-[13px] text-smoke py-10 text-center">We couldn&apos;t load your orders just now. Please try again in a moment.</p>
+      ) : orders.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="w-14 h-14 rounded-full bg-paper flex items-center justify-center mb-5">
             <Package size={20} strokeWidth={1} className="text-smoke" />
@@ -123,24 +119,24 @@ export default async function OrdersPage() {
                     })}
                   </p>
                 </div>
-                <Badge variant={order.paymentStatus} className="shrink-0">
-                  {order.paymentMethod === "cod" ? "COD" : order.paymentStatus}
+                {/* A list summary names the way of paying; the order's own page says whether it is paid. */}
+                <Badge variant={order.paymentMethod === "cod" ? "pending" : "processing"} className="shrink-0">
+                  {order.paymentMethod === "cod" ? "COD" : "Online"}
                 </Badge>
               </div>
 
-              <OrderTracker status={order.orderStatus} />
+              <OrderTracker status={order.orderStatus} label={order.statusLabel?.en} />
 
               <div className="flex items-end justify-between mt-5 pt-4 border-t border-stone-100">
                 <div>
                   <p className="text-[11px] text-smoke leading-relaxed">
-                    {order.items.slice(0, 2).map((i) => `${i.name} (${i.size})`).join(" · ")}
-                    {order.items.length > 2 && ` +${order.items.length - 2} more`}
+                    {order.itemCount} item{order.itemCount === 1 ? "" : "s"}
                   </p>
                   <p className="font-semibold text-ink text-[15px] mt-1">{formatPrice(order.totalAmount)}</p>
                 </div>
                 <Link
-                  href={`/account/orders/${order._id}`}
-                  className="text-[11px] uppercase tracking-[-0.005em] text-signal hover:text-ink transition-colors shrink-0"
+                  href={`/account/orders/${encodeURIComponent(order.orderNumber)}`}
+                  className="text-[11px] uppercase tracking-[2px] text-signal hover:text-ink transition-colors shrink-0"
                 >
                   View →
                 </Link>

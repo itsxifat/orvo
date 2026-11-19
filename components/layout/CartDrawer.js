@@ -5,7 +5,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { X, Minus, Plus, ArrowUpRight, ShoppingBag } from "lucide-react";
 import { useCart } from "@/context/CartContext";
-import { formatPrice, shouldUnoptimizeImage } from "@/lib/utils";
+import { formatPrice, shouldUnoptimizeImage, PLACEHOLDER_IMAGE } from "@/lib/utils";
+import WasPrice from "@/components/ui/WasPrice";
 
 export default function CartDrawer() {
   const { items, isDrawerOpen, closeDrawer, removeItem, updateQuantity, subtotal, itemCount } = useCart();
@@ -77,10 +78,10 @@ export default function CartDrawer() {
                     className="relative w-[84px] aspect-[4/5] rounded-2xl bg-haze overflow-hidden shrink-0"
                   >
                     <Image
-                      src={item.image || "/placeholder.jpg"}
+                      src={item.image || PLACEHOLDER_IMAGE}
                       alt={item.name}
                       fill
-                      unoptimized={shouldUnoptimizeImage(item.image)}
+                      unoptimized={shouldUnoptimizeImage(item.image || PLACEHOLDER_IMAGE)}
                       className="object-cover"
                       sizes="84px"
                     />
@@ -133,8 +134,20 @@ export default function CartDrawer() {
                               <Plus size={12} strokeWidth={2.4} />
                             </button>
                           </div>
-                          <span className="text-[15.5px] font-bold text-ink tabular-nums tracking-[-0.02em]">
-                            {formatPrice(item.price * item.quantity)}
+                          {/* What the shopper pays now, with the regular price
+                              struck through when a flash or sale price is
+                              below it (the ERP's compareAt). */}
+                          <span className="flex flex-col items-end leading-tight">
+                            {item.regularPrice > item.price && (
+                              <WasPrice amount={item.regularPrice * item.quantity} className="text-[12px]" />
+                            )}
+                            <span
+                              className={`text-[15.5px] font-bold tabular-nums tracking-[-0.02em] ${
+                                item.regularPrice > item.price ? "text-signal" : "text-ink"
+                              }`}
+                            >
+                              {formatPrice(item.price * item.quantity)}
+                            </span>
                           </span>
                         </>
                       )}

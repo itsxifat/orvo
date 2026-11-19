@@ -1,22 +1,17 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getTrackingConfig, clientSafeConfig } from "@/lib/tracking/config";
+import { getTrackingConfig } from "@/lib/storefront";
 
-// Public, NON-SECRET config the browser helper reads to know what to fire and
-// which first-party paths to load scripts from. Never exposes tokens/secrets.
+// What the browser's tracking helper (lib/tracking/client.js) may load and fire:
+// the brand ERP's Website → Tracking (GET /storefront/v1/tracking/config, M35b,
+// D-552), mapped by lib/storefront-map.js → mapTrackingConfig. No secret is in
+// it: the pixel id, the GA4 measurement id, this site's proxy paths and which
+// events fire in the browser. `enabled: false` (the ERP has the pixel and gtag
+// off, or cannot be read) means no script, no cookie and no event.
 export async function GET() {
-  try {
-    const config = await getTrackingConfig();
-    const safe = clientSafeConfig(config);
-    return NextResponse.json(safe, {
-      // Cache briefly at the edge/browser; admin changes propagate within ~30s.
-      headers: { "Cache-Control": "public, max-age=30, stale-while-revalidate=120" },
-    });
-  } catch {
-    return NextResponse.json(
-      { meta: { pixelEnabled: false }, ga4: { clientEnabled: false }, events: [] },
-      { status: 200 }
-    );
-  }
+  const config = await getTrackingConfig();
+  return NextResponse.json(config, {
+    headers: { "Cache-Control": "public, max-age=30, stale-while-revalidate=120" },
+  });
 }

@@ -51,7 +51,7 @@ function VerifyEmailForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, otp: code }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         toast.error(data.error || "That code is not right");
         return;
@@ -68,11 +68,16 @@ function VerifyEmailForm() {
   const handleResend = async () => {
     setResending(true);
     try {
-      await fetch("/api/auth/resend-otp", {
+      const res = await fetch("/api/auth/resend-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Could not resend the code");
+        return;
+      }
       toast.success("A new code is on its way.");
     } catch {
       toast.error("Could not resend the code");
@@ -140,8 +145,9 @@ function VerifyEmailForm() {
         <p className="text-[14px] text-smoke leading-relaxed">
           No code yet? It can take a minute — check your spam folder, or{" "}
           <button
+            type="button"
             onClick={handleResend}
-            disabled={resending}
+            disabled={resending || !email}
             className="font-semibold text-ink hover:text-signal transition-colors disabled:opacity-50"
           >
             {resending ? "sending…" : "send a new one"}
